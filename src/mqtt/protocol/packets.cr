@@ -3,6 +3,8 @@ require "./io"
 private macro decode_assert(condition, err)
   {% if (err.class_name == "StringLiteral" || err.class_name == "StringInterpolation") %}
     ({{condition}} || raise Error::PacketDecode.new {{err}})
+  {% elsif (err.class_name == "Call")%}
+    ({{condition}} || raise Error::PacketDecode.new {{err}})
   {% else %}
     ({{condition}} || raise {{err}}.new)
   {% end %}
@@ -58,10 +60,10 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, _remaining_length)
-        decode_assert flags.zero?, "invalid flags"
+        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
 
         protocol_len = io.read_int
-        decode_assert protocol_len == 4, "invalid protocol length"
+        decode_assert protocol_len == 4, "invalid protocol length: #{protocol_len}"
 
         protocol = io.read_string(protocol_len)
         decode_assert protocol == "MQTT", "invalid protocol: #{protocol.inspect}"
@@ -74,6 +76,8 @@ module MQTT
         clean_session = connect_flags.bit(1) == 1
         has_will = connect_flags.bit(2) == 1
         will_qos = (connect_flags & 0b00011000) >> 3
+        decode_assert will_qos < 3, "invalid will qos: #{will_qos}"
+
         will_retain = connect_flags.bit(5) == 1
         has_password = connect_flags.bit(6) == 1
         has_username = connect_flags.bit(7) == 1
@@ -81,7 +85,7 @@ module MQTT
         keepalive = io.read_int
 
         client_id_len = io.read_int
-        decode_assert client_id_len < 256, "client id too long, #{client_id_len} > 255"
+        decode_assert client_id_len < 256, "client id too long: #{client_id_len} > 255"
         client_id = io.read_string(client_id_len)
 
         if client_id.to_s.empty?
@@ -175,15 +179,15 @@ module MQTT
       def initialize(@session_present : Bool, @return_code : ReturnCode)
       end
 
-      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
-        decode_assert flags.zero?, "invalid flags"
+      def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
+        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
 
         connack_flags = io.read_byte
-        decode_assert (connack_flags & 0b11111110).zero?, "invalid connack flags"
+        decode_assert (connack_flags & 0b11111110).zero?, sprintf("invalid connack flags: %08b", connack_flags)
         session_present = (connack_flags & 1u8) > 0
 
         return_code = io.read_byte
-        decode_assert return_code < 6, "invalid return code"
+        decode_assert return_code < 6, "invalid return code: #{return_code}"
 
         self.new(session_present, ReturnCode.new(return_code))
       end
@@ -205,11 +209,11 @@ module MQTT
       def initialize(@topic : String, @body : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
       end
 
-      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
+      def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
         dup = flags.bit(3) > 0
         retain = flags.bit(0) > 0
         qos = (flags & 0b00000110u8) >> 1
-        decode_assert qos < 3, "invalid qos"
+        decode_assert qos < 3, "invalid qos: #{qos}"
         topic = io.read_string
         remaining_length -= (2 + topic.bytesize)
         if qos.positive?
@@ -245,8 +249,8 @@ module MQTT
       def initialize(@topics : Array(String), @packet_id : UInt16)
       end
 
-      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
-        decode_assert flags == 2, "invalid flags"
+      def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
+        decode_assert flags == 2, sprintf("invalid flags: %04b", flags)
         decode_assert remaining_length > 2, "protocol violation"
 
         packet_id = io.read_int
@@ -288,7 +292,7 @@ module MQTT
       def initialize(@packet_id : UInt16)
       end
 
-      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
+      def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
         decode_assert flags.zero?, "invalid flags"
         decode_assert remaining_length == 2, "invalid length"
         packet_id = io.read_int
@@ -305,8 +309,8 @@ module MQTT
     abstract struct SimplePacket < Packet
       private abstract def type
 
-      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
-        decode_assert flags.zero?, "invalid flags"
+      def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
+        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
         decode_assert remaining_length.zero?, "invalid length"
         self.new
       end

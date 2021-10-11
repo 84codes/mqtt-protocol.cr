@@ -51,7 +51,6 @@ module MQTT
         end
       end
 
-
       class NotAuthorized < Connect
         def initialize(msg = "not authorized")
           super(msg)

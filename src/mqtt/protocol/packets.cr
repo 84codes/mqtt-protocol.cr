@@ -28,6 +28,7 @@ module MQTT
           case type
           when Connect::TYPE     then Connect.from_io(io, flags, remaining_length)
           when Connack::TYPE     then Connack.from_io(io, flags, remaining_length)
+          when Publish::TYPE     then Publish.from_io(io, flags, remaining_length)
           when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
           when UnsubAck::TYPE    then UnsubAck.from_io(io, flags, remaining_length)
           when PingReq::TYPE     then PingReq.from_io(io, flags, remaining_length)
@@ -192,6 +193,48 @@ module MQTT
         io.write_remaining_length 2
         io.write_byte session_present? ? 1u8 : 0u8
         io.write_byte return_code.to_u8
+      end
+    end
+
+    struct Publish < Packet
+      TYPE = 3u8
+
+      getter topic, body, qos, packet_id
+      getter? dup, retain
+
+      def initialize(@topic : String, @body : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
+        dup = flags.bit(3) > 0
+        retain = flags.bit(0) > 0
+        qos = (flags & 0b00000110u8) >> 1
+        decode_assert qos < 3, "invalid qos"
+        topic = io.read_string
+        remaining_length -= (2 + topic.bytesize)
+        if qos.positive?
+          packet_id = io.read_int
+          remaining_length -= 2
+        end
+        payload = io.read_bytes(remaining_length.to_u16)
+        self.new(topic, payload, packet_id, dup, qos, retain)
+      end
+
+      def to_io(io)
+        remaining_length = 0
+        flags = 0u8
+        flags |= 0b0000_1000u8 if dup?
+        flags |= 0b0000_0001u8 if retain?
+        flags |= (0b0000_0110u8 & (qos << 1)) if qos.positive?
+        io.write_byte ((TYPE << 4) | flags)
+        remaining_length += (2 + topic.bytesize) + body.bytesize
+        if qos.positive?
+          remaining_length += 2 # packet_id
+        end
+        io.write_remaining_length remaining_length
+        io.write_string topic
+        io.write_int packet_id.not_nil! if qos.positive?
+        io.write_bytes_raw(body)
       end
     end
 

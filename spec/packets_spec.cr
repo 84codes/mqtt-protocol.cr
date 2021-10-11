@@ -153,6 +153,55 @@ describe MQTT::Protocol::Packet do
       end
     end
 
+    describe "Publish" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          topic = "a/b/c"
+          payload = "foobar and barfoo".to_slice
+          remaining_length = topic.bytesize + payload.size + 2 # 2 = sizeof topic len
+
+          io.write_byte 0b00110000u8
+          io.write_remaining_length remaining_length
+          io.write_string topic
+          io.write_bytes_raw payload
+
+          mio.rewind
+
+          publish = MQTT::Protocol::Packet.from_io(io)
+
+          publish.should be_a MQTT::Protocol::Publish
+          publish = publish.as MQTT::Protocol::Publish
+          publish.topic.should eq topic
+          publish.body.should eq payload
+        end
+      end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          topic = "a/b/c"
+          payload = "foobar and barfoo".to_slice
+          packet_id = 100u16
+          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+          publish.to_io(io)
+
+          mio.rewind
+
+          parsed_publish = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::Publish
+
+          parsed_publish.topic.should eq topic
+          parsed_publish.body.should eq payload
+          parsed_publish.packet_id.not_nil!.should eq packet_id
+        end
+      end
+    end
+
+
     describe "Unsubscribe" do
       describe "#from_io" do
         it "is parsed" do

@@ -26,11 +26,13 @@ module MQTT
         remaining_length = io.read_remaining_length
         packet =
           case type
-          when Connect::TYPE    then Connect.from_io(io, flags, remaining_length)
-          when Connack::TYPE    then Connack.from_io(io, flags, remaining_length)
-          when PingReq::TYPE    then PingReq.from_io(io, flags, remaining_length)
-          when PingResp::TYPE   then PingResp.from_io(io, flags, remaining_length)
-          when Disconnect::TYPE then Disconnect.from_io(io, flags, remaining_length)
+          when Connect::TYPE     then Connect.from_io(io, flags, remaining_length)
+          when Connack::TYPE     then Connack.from_io(io, flags, remaining_length)
+          when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
+          when UnsubAck::TYPE    then UnsubAck.from_io(io, flags, remaining_length)
+          when PingReq::TYPE     then PingReq.from_io(io, flags, remaining_length)
+          when PingResp::TYPE    then PingResp.from_io(io, flags, remaining_length)
+          when Disconnect::TYPE  then Disconnect.from_io(io, flags, remaining_length)
           else
             decode_assert false, "invalid packet type"
           end
@@ -190,6 +192,70 @@ module MQTT
         io.write_remaining_length 2
         io.write_byte session_present? ? 1u8 : 0u8
         io.write_byte return_code.to_u8
+      end
+    end
+
+    struct Unsubscribe < Packet
+      TYPE = 10u8
+      getter packet_id, topics
+
+      def initialize(@topics : Array(String), @packet_id : UInt16)
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
+        decode_assert flags == 2, "invalid flags"
+        decode_assert remaining_length > 2, "protocol violation"
+
+        packet_id = io.read_int
+        bytes_to_read = remaining_length - 2
+        topics = Array(String).new
+        while bytes_to_read > 0
+          topic = io.read_string
+          topics << topic
+          bytes_to_read -= (2 + topic.bytesize)
+        end
+        self.new(topics, packet_id)
+      end
+
+      def to_io(io)
+        flags = 0b0010
+        io.write_byte((TYPE << 4) | flags)
+        io.write_remaining_length remaining_length
+        io.write_int(@packet_id)
+        @topics.each do |topic|
+          io.write_string(topic)
+        end
+      end
+
+      private def remaining_length
+        # This is the length of variable header (2 bytes) plus the length of the payload.
+        length = 2
+        @topics.each do |topic|
+          length += (2 + topic.bytesize)
+        end
+        length
+      end
+    end
+
+    struct UnsubAck < Packet
+      TYPE = 11u8
+
+      getter packet_id
+
+      def initialize(@packet_id : UInt16)
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
+        decode_assert flags.zero?, "invalid flags"
+        decode_assert remaining_length == 2, "invalid length"
+        packet_id = io.read_int
+        self.new(packet_id)
+      end
+
+      def to_io(io)
+        io.write_byte (TYPE << 4)
+        io.write_remaining_length 2
+        io.write_int(packet_id)
       end
     end
 

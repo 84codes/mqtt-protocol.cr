@@ -153,6 +153,149 @@ describe MQTT::Protocol::Packet do
       end
     end
 
+    describe "Unsubscribe" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b10100010u8                           # Unsubscribe
+          io.write_remaining_length 2 + 2 + "MyTopic".bytesize # 2 for variable header, 2 for Int32
+          io.write_int(50u16)
+          io.write_string("MyTopic")
+          mio.rewind
+
+          unsubscribe = MQTT::Protocol::Packet.from_io(mio)
+          unsubscribe.should be_a MQTT::Protocol::Unsubscribe
+          unsubscribe = unsubscribe.as(MQTT::Protocol::Unsubscribe)
+          unsubscribe.packet_id.should eq 50u16
+          unsubscribe.topics.first.should eq "MyTopic"
+        end
+
+        it "handles multiple topics" do
+          topics = ["MyTopic", "MyTopic2", "MyTopic4", "MyTopic3"]
+          length = 0
+          topics.each do |t|
+            length += 2 + t.bytesize
+          end
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b10100010u8           # Unsubscribe
+          io.write_remaining_length 2 + length # 2 for variable header, rest is length
+          io.write_int(50u16)
+          topics.each do |t|
+            io.write_string(t)
+          end
+          mio.rewind
+
+          unsubscribe = MQTT::Protocol::Packet.from_io(mio)
+          unsubscribe.should be_a MQTT::Protocol::Unsubscribe
+          unsubscribe = unsubscribe.as(MQTT::Protocol::Unsubscribe)
+          unsubscribe.packet_id.should eq 50u16
+          unsubscribe.topics.size.should eq 4
+          unsubscribe.topics.each_with_index do |topic, index|
+            topic.should eq topics[index]
+          end
+        end
+
+        it "raises if flags are not set" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b10100000u8 # Unsubscribe
+          io.write_remaining_length 2
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+
+        it "raises if length is larger than 2" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b10100010u8 # Unsubscribe
+          io.write_remaining_length 2
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /protocol violation/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+      end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          topics = ["abc", "def", "ghij"]
+          unsubscribe = MQTT::Protocol::Unsubscribe.new(topics, 65u16)
+          unsubscribe.to_io(io)
+
+          mio.rewind
+
+          parsed_packet = MQTT::Protocol::Packet.from_io(io)
+          parsed_packet.should be_a MQTT::Protocol::Unsubscribe
+          unsubscribe_packet = parsed_packet.as(MQTT::Protocol::Unsubscribe)
+          unsubscribe_packet.packet_id.should eq 65u16
+          unsubscribe_packet.topics.each_with_index do |topic, index|
+            topic.should eq topics[index]
+          end
+        end
+      end
+    end
+
+    describe "UnsubAck" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b10110000u8  # UnsubAck
+          io.write_remaining_length 2 # always 0
+          io.write_int(50u16)
+          mio.rewind
+
+          unsub_ack = MQTT::Protocol::Packet.from_io(mio)
+          unsub_ack.should be_a MQTT::Protocol::UnsubAck
+          unsub_ack.as(MQTT::Protocol::UnsubAck).packet_id.should eq 50u16
+        end
+
+        it "raises if flags are set" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b10110010u8 # UnsubAck
+          io.write_remaining_length 2
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+
+        it "raises if length is not 2" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b10110000u8 # UnsubAck
+          io.write_remaining_length 0
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid length/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+      end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          unsub_ack = MQTT::Protocol::UnsubAck.new(65534u16)
+          unsub_ack.to_io(io)
+
+          mio.rewind
+
+          parsed_packet = MQTT::Protocol::Packet.from_io(io)
+          parsed_packet.should be_a MQTT::Protocol::UnsubAck
+          parsed_packet.as(MQTT::Protocol::UnsubAck).packet_id.should eq 65534u16
+        end
+      end
+    end
+
     describe "PingReq" do
       describe "#from_io" do
         it "is parsed" do

@@ -57,6 +57,21 @@ describe MQTT::Protocol::IO do
     res.should eq bytes
   end
 
+  it "can write bytes raw" do
+    bytes = "abc".to_slice
+
+    mio = IO::Memory.new
+    io = MQTT::Protocol::IO.new(mio)
+
+    io.write_bytes_raw bytes
+    mio.rewind
+
+    res = Bytes.new(3)
+    mio.read_fully res
+
+    res.should eq bytes
+  end
+
   it "can write remaining length 1 byte" do
     mio = IO::Memory.new
     io = MQTT::Protocol::IO.new(mio)

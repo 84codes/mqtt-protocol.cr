@@ -30,7 +30,7 @@ module MQTT
         value
       end
 
-      def read_bytes(len : UInt16? = nil)
+      def read_bytes(len : Int? = nil)
         len = read_int unless len
         bytes = Bytes.new(len)
         @io.read_fully(bytes)
@@ -43,6 +43,10 @@ module MQTT
 
       def write_bytes(bytes : Bytes)
         write_int bytes.bytesize
+        @io.write bytes
+      end
+
+      def write_bytes_raw(bytes : Bytes)
         @io.write bytes
       end
 

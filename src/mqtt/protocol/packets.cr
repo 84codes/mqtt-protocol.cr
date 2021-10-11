@@ -1,7 +1,7 @@
 require "./io"
 
 private macro decode_assert(condition, err)
-  {% if (err.class_name == "StringLiteral"  || err.class_name == "StringInterpolation") %}
+  {% if (err.class_name == "StringLiteral" || err.class_name == "StringInterpolation") %}
     ({{condition}} || raise Error::PacketDecode.new {{err}})
   {% else %}
     ({{condition}} || raise {{err}}.new)
@@ -26,14 +26,14 @@ module MQTT
         remaining_length = io.read_remaining_length
         packet =
           case type
-          when Connect::TYPE  then Connect.from_io(io, flags, remaining_length)
-          when Connack::TYPE  then Connack.from_io(io, flags, remaining_length)
+          when Connect::TYPE    then Connect.from_io(io, flags, remaining_length)
+          when Connack::TYPE    then Connack.from_io(io, flags, remaining_length)
+          when Disconnect::TYPE then Disconnect.from_io(io, flags, remaining_length)
           else
             decode_assert false, "invalid packet type"
           end
         packet
       end
-
     end
 
     struct Connect < Packet
@@ -154,12 +154,12 @@ module MQTT
 
     struct Connack < Packet
       enum ReturnCode : UInt8
-        Accepted = 0
+        Accepted                    = 0
         UnacceptableProtocolVersion = 1
-        IdentifierRejected = 2
-        ServerUnavailable = 3
-        BadCredentials = 4
-        NotAuthorized = 5
+        IdentifierRejected          = 2
+        ServerUnavailable           = 3
+        BadCredentials              = 4
+        NotAuthorized               = 5
       end
 
       TYPE = 2u8
@@ -188,6 +188,24 @@ module MQTT
         io.write_remaining_length 2
         io.write_byte session_present? ? 1u8 : 0u8
         io.write_byte return_code.to_u8
+      end
+    end
+
+    struct Disconnect < Packet
+      TYPE = 14u8
+
+      def initialize
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
+        flags.zero? || raise Error::PacketDecode.new "invalid flags"
+        raise Error::PacketDecode.new "invalid length" unless remaining_length.zero?
+        self.new
+      end
+
+      def to_io(io)
+        io.write_byte(TYPE << 4)
+        io.write_remaining_length 0
       end
     end
   end

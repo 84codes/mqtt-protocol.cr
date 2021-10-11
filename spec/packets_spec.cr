@@ -67,8 +67,8 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length remaining_length.to_u8
           io.write_string "MQTT"
-          io.write_byte 4u8 # protocol = 4 (3.1.1)
-          io.write_byte 0u8 # Connect flags
+          io.write_byte 4u8  # protocol = 4 (3.1.1)
+          io.write_byte 0u8  # Connect flags
           io.write_int 60u16 # keepalive = 60
           io.write_string client_id
           mio.rewind
@@ -120,10 +120,10 @@ describe MQTT::Protocol::Packet do
         it "is parsed" do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.new(mio)
-          io.write_byte 0b00100000u8 # connack
+          io.write_byte 0b00100000u8  # connack
           io.write_remaining_length 2 # always 2
-          io.write_byte 0b00000001u8 # connack flags, session present=1
-          io.write_byte 0u8 # return code, 0 = Accepted
+          io.write_byte 0b00000001u8  # connack flags, session present=1
+          io.write_byte 0u8           # return code, 0 = Accepted
           mio.rewind
 
           connect = MQTT::Protocol::Packet.from_io(mio)
@@ -149,6 +149,58 @@ describe MQTT::Protocol::Packet do
 
           parsed_connack.return_code.should eq MQTT::Protocol::Connack::ReturnCode::Accepted
           parsed_connack.session_present?.should be_false
+        end
+      end
+    end
+
+    describe "Disconnect" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b11100000u8  # Disconnect
+          io.write_remaining_length 0 # always 0
+          mio.rewind
+
+          disconnect = MQTT::Protocol::Packet.from_io(mio)
+          disconnect.should be_a MQTT::Protocol::Disconnect
+        end
+
+        it "raises if flags are set" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b11100100u8  # Disconnect
+          io.write_remaining_length 0 # always 0
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+
+        it "raises if length is not 0" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b11100000u8 # Disconnect
+          io.write_remaining_length 1
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid length/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+      end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          disconnect = MQTT::Protocol::Disconnect.new
+          disconnect.to_io(io)
+
+          mio.rewind
+
+          parsed_packet = MQTT::Protocol::Packet.from_io(io)
+          parsed_packet.should be_a MQTT::Protocol::Disconnect
         end
       end
     end

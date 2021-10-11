@@ -28,6 +28,8 @@ module MQTT
           case type
           when Connect::TYPE    then Connect.from_io(io, flags, remaining_length)
           when Connack::TYPE    then Connack.from_io(io, flags, remaining_length)
+          when PingReq::TYPE    then PingReq.from_io(io, flags, remaining_length)
+          when PingResp::TYPE   then PingResp.from_io(io, flags, remaining_length)
           when Disconnect::TYPE then Disconnect.from_io(io, flags, remaining_length)
           else
             decode_assert false, "invalid packet type"
@@ -191,21 +193,45 @@ module MQTT
       end
     end
 
-    struct Disconnect < Packet
-      TYPE = 14u8
-
-      def initialize
-      end
+    abstract struct SimplePacket < Packet
+      private abstract def type
 
       def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
-        flags.zero? || raise Error::PacketDecode.new "invalid flags"
-        raise Error::PacketDecode.new "invalid length" unless remaining_length.zero?
+        decode_assert flags.zero?, "invalid flags"
+        decode_assert remaining_length.zero?, "invalid length"
         self.new
       end
 
       def to_io(io)
-        io.write_byte(TYPE << 4)
+        io.write_byte(type << 4)
         io.write_remaining_length 0
+      end
+
+      def initialize
+      end
+    end
+
+    struct PingReq < SimplePacket
+      TYPE = 12u8
+
+      private def type
+        TYPE
+      end
+    end
+
+    struct PingResp < SimplePacket
+      TYPE = 13u8
+
+      private def type
+        TYPE
+      end
+    end
+
+    struct Disconnect < SimplePacket
+      TYPE = 14u8
+
+      private def type
+        TYPE
       end
     end
   end

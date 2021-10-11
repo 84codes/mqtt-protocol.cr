@@ -153,6 +153,108 @@ describe MQTT::Protocol::Packet do
       end
     end
 
+    describe "PingReq" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b11000000u8  # PingReq
+          io.write_remaining_length 0 # always 0
+          mio.rewind
+
+          ping_req = MQTT::Protocol::Packet.from_io(mio)
+          ping_req.should be_a MQTT::Protocol::PingReq
+        end
+        it "raises if flags are set" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b11000010u8  # PingReq
+          io.write_remaining_length 0 # always 0
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+
+        it "raises if length is not 0" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b11000000u8 # PingReq
+          io.write_remaining_length 1
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid length/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+      end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          ping_req = MQTT::Protocol::PingReq.new
+          ping_req.to_io(io)
+
+          mio.rewind
+
+          parsed_packet = MQTT::Protocol::Packet.from_io(io)
+          parsed_packet.should be_a MQTT::Protocol::PingReq
+        end
+      end
+    end
+
+    describe "PingResp" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b11010000u8  # PingResp
+          io.write_remaining_length 0 # always 0
+          mio.rewind
+
+          ping_req = MQTT::Protocol::Packet.from_io(mio)
+          ping_req.should be_a MQTT::Protocol::PingResp
+        end
+        it "raises if flags are set" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b11010010u8  # PingResp
+          io.write_remaining_length 0 # always 0
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+
+        it "raises if length is not 0" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b11010000u8 # PingResp
+          io.write_remaining_length 1
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid length/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+      end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          ping_req = MQTT::Protocol::PingResp.new
+          ping_req.to_io(io)
+
+          mio.rewind
+
+          parsed_packet = MQTT::Protocol::Packet.from_io(io)
+          parsed_packet.should be_a MQTT::Protocol::PingResp
+        end
+      end
+    end
+
     describe "Disconnect" do
       describe "#from_io" do
         it "is parsed" do

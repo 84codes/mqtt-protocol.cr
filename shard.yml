@@ -1,0 +1,12 @@
+name: mqtt-protocol
+version: 0.1.0
+
+authors:
+  - Jon Börjesson <jon@84codes.com>
+
+description: |
+  MQTT 3.1.1 protocol library
+
+crystal: ">= 0.35.1"
+
+license: MIT

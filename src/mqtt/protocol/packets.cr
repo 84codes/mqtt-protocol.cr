@@ -175,7 +175,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
-        flags.zero? || raise Error::PacketDecode.new "invalid flags"
+        decode_assert flags.zero?, "invalid flags"
 
         connack_flags = io.read_byte
         decode_assert (connack_flags & 0b11111110).zero?, "invalid connack flags"

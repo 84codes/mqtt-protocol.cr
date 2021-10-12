@@ -37,6 +37,7 @@ module MQTT
           when PubAck::TYPE      then PubAck.from_io(io, flags, remaining_length)
           when PubRec::TYPE      then PubRec.from_io(io, flags, remaining_length)
           when PubRel::TYPE      then PubRel.from_io(io, flags, remaining_length)
+          when PubComp::TYPE     then PubComp.from_io(io, flags, remaining_length)
           when Subscribe::TYPE   then Subscribe.from_io(io, flags, remaining_length)
           when SubAck::TYPE      then SubAck.from_io(io, flags, remaining_length)
           when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
@@ -302,6 +303,27 @@ module MQTT
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
         decode_assert flags == 2, MQTT::Protocol::Error::InvalidFlags, flags
+        packet_id = io.read_int
+        new(packet_id)
+      end
+
+      def to_io(io)
+        io.write_byte (TYPE << 4) | 2u8
+        io.write_remaining_length 2
+        io.write_int(packet_id)
+      end
+    end
+
+    struct PubComp < Packet
+      TYPE = 7u8
+      getter packet_id
+
+      def initialize(@packet_id : UInt16)
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
+        decode_assert flags == 2, sprintf("invalid flags: %04b", flags)
+        decode_assert remaining_length == 2, sprintf("invalid length: %d", remaining_length)
         packet_id = io.read_int
         new(packet_id)
       end

@@ -335,6 +335,38 @@ describe MQTT::Protocol::Packet do
       end
     end
 
+    describe "PubComp" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          packet_id = 123
+          io.write_byte (7u8 << 4) | 2u8
+          io.write_remaining_length 2
+          io.write_int packet_id
+          mio.rewind
+
+          pubcomp = MQTT::Protocol::Packet.from_io(mio)
+          pubcomp.should be_a MQTT::Protocol::PubComp
+          pubcomp = pubcomp.as MQTT::Protocol::PubComp
+          pubcomp.packet_id.should eq packet_id
+        end
+      end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          packet_id = 123u16
+          pubcomp = MQTT::Protocol::PubComp.new(packet_id)
+          pubcomp.to_io(io)
+          mio.rewind
+
+          parsed_pubcomp = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::PubComp
+          parsed_pubcomp.packet_id.should eq packet_id
+        end
+      end
+    end
     describe "Subscribe" do
       describe "#from_io" do
         it "is parsed" do

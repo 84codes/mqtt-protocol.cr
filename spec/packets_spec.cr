@@ -100,7 +100,7 @@ describe MQTT::Protocol::Packet do
             keepalive: keepalive,
             username: username,
             password: password,
-            will: MQTT::Protocol::Will.new(wtopic, "will body".to_slice, 1u8, false)
+            will: MQTT::Protocol::Will.new(wtopic, "will payload".to_slice, 1u8, false)
           )
 
           connect.to_io(io)
@@ -175,7 +175,7 @@ describe MQTT::Protocol::Packet do
           publish.should be_a MQTT::Protocol::Publish
           publish = publish.as MQTT::Protocol::Publish
           publish.topic.should eq topic
-          publish.body.should eq payload
+          publish.payload.should eq payload
         end
       end
 
@@ -195,7 +195,7 @@ describe MQTT::Protocol::Packet do
           parsed_publish = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::Publish
 
           parsed_publish.topic.should eq topic
-          parsed_publish.body.should eq payload
+          parsed_publish.payload.should eq payload
           parsed_publish.packet_id.not_nil!.should eq packet_id
         end
       end

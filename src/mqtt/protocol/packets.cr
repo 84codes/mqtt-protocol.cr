@@ -117,7 +117,7 @@ module MQTT
           remaining_length += sizeof(UInt16)
           remaining_length += w.topic.bytesize
           remaining_length += sizeof(UInt16)
-          remaining_length += w.body.bytesize
+          remaining_length += w.payload.bytesize
         end
         if u = username
           connect_flags |= 0b1000_0000u8
@@ -144,21 +144,21 @@ module MQTT
     end
 
     struct Will
-      getter topic, body, qos
+      getter topic, payload, qos
       getter? retain
 
-      def initialize(@topic : String, @body : Bytes, @qos : UInt8, @retain : Bool)
+      def initialize(@topic : String, @payload : Bytes, @qos : UInt8, @retain : Bool)
       end
 
       def self.from_io(io : MQTT::Protocol::IO, qos : UInt8, retain : Bool)
         topic = io.read_string
-        body = io.read_bytes
-        self.new(topic, body, qos, retain)
+        payload = io.read_bytes
+        self.new(topic, payload, qos, retain)
       end
 
       def to_io(io)
         io.write_string topic
-        io.write_bytes body
+        io.write_bytes payload
       end
     end
 
@@ -204,10 +204,10 @@ module MQTT
     struct Publish < Packet
       TYPE = 3u8
 
-      getter topic, body, qos, packet_id
+      getter topic, payload, qos, packet_id
       getter? dup, retain
 
-      def initialize(@topic : String, @body : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
+      def initialize(@topic : String, @payload : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
@@ -232,14 +232,14 @@ module MQTT
         flags |= 0b0000_0001u8 if retain?
         flags |= (0b0000_0110u8 & (qos << 1)) if qos.positive?
         io.write_byte ((TYPE << 4) | flags)
-        remaining_length += (2 + topic.bytesize) + body.bytesize
+        remaining_length += (2 + topic.bytesize) + payload.bytesize
         if qos.positive?
           remaining_length += 2 # packet_id
         end
         io.write_remaining_length remaining_length
         io.write_string topic
         io.write_int packet_id.not_nil! if qos.positive?
-        io.write_bytes_raw(body)
+        io.write_bytes_raw(payload)
       end
     end
 

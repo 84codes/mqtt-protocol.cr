@@ -7,6 +7,12 @@ module MQTT
       class PacketEncode < Error
       end
 
+      class InvalidFlags < PacketDecode
+        def initialize(flags : UInt8)
+          super sprintf("invalid flags: %b", flags)
+        end
+      end
+
       abstract class Connect < Error
         abstract def return_code : UInt8
       end

@@ -16,6 +16,17 @@ describe MQTT::Protocol::Packet do
     end
 
     describe "Connect" do
+        it "validates flags" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b00010100u8 # connect
+          io.write_remaining_length 10u8
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
+            connect = MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
       describe "#from_io" do
         it "validates protocol name" do
           mio = IO::Memory.new
@@ -132,6 +143,32 @@ describe MQTT::Protocol::Packet do
           connect = connect.as MQTT::Protocol::Connack
           connect.session_present?.should be_true
           connect.return_code.value.should eq 0u8
+        end
+
+        it "validates flags" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b00100100u8  # connack
+          io.write_remaining_length 2 # always 2
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+
+        it "validates connack flags" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b00100000u8  # connack
+          io.write_remaining_length 2 # always 2
+          io.write_byte 0b00100001u8  # connack flags, session present=1
+          io.write_byte 0u8           # return code, 0 = Accepted
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid connack flags/) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
         end
       end
 
@@ -500,7 +537,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b10100000u8 # Unsubscribe
           io.write_remaining_length 2
           mio.rewind
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end
@@ -559,7 +596,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b10110010u8 # UnsubAck
           io.write_remaining_length 2
           mio.rewind
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end
@@ -611,7 +648,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b11000010u8  # PingReq
           io.write_remaining_length 0 # always 0
           mio.rewind
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end
@@ -662,7 +699,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b11010010u8  # PingResp
           io.write_remaining_length 0 # always 0
           mio.rewind
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end
@@ -714,7 +751,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b11100100u8  # Disconnect
           io.write_remaining_length 0 # always 0
           mio.rewind
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
+          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end

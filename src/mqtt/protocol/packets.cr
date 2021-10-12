@@ -1,6 +1,6 @@
 require "./io"
 
-private macro decode_assert(condition, err)
+private macro decode_assert(condition, err, *args)
   {% if (err.class_name == "StringLiteral" || err.class_name == "StringInterpolation") %}
     # err is a string
     ({{condition}} || raise Error::PacketDecode.new {{err}})
@@ -9,7 +9,7 @@ private macro decode_assert(condition, err)
     ({{condition}} || raise Error::PacketDecode.new {{err}})
   {% else %}
     # here we just assume it's a class name
-    ({{condition}} || raise {{err}}.new)
+    ({{condition}} || raise {{err}}.new({{*args}}))
   {% end %}
 end
 
@@ -68,7 +68,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, _remaining_length)
-        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
+        decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
 
         protocol_len = io.read_int
         decode_assert protocol_len == 4, "invalid protocol length: #{protocol_len}"
@@ -188,7 +188,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
+        decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
 
         connack_flags = io.read_byte
         decode_assert (connack_flags & 0b11111110).zero?, sprintf("invalid connack flags: %08b", connack_flags)
@@ -259,7 +259,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
+        decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         packet_id = io.read_int
         new(packet_id)
       end
@@ -280,7 +280,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
+        decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         packet_id = io.read_int
         new(packet_id)
       end
@@ -301,7 +301,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-        decode_assert flags == 2, sprintf("invalid flags: %04b", flags)
+        decode_assert flags == 2, MQTT::Protocol::Error::InvalidFlags, flags
         packet_id = io.read_int
         new(packet_id)
       end
@@ -323,7 +323,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
-        decode_assert flags == 2, "invalid flags"
+        decode_assert flags == 2, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length > 2, "protocol violation"
         packet_id = io.read_int
 
@@ -391,7 +391,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
-        decode_assert flags.zero?, "invalid flags"
+        decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length > 2, "protocol violation"
         packet_id = io.read_int
         bytes_to_read = remaining_length - 2
@@ -422,7 +422,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-        decode_assert flags == 2, sprintf("invalid flags: %04b", flags)
+        decode_assert flags == 2, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length > 2, "protocol violation"
 
         packet_id = io.read_int
@@ -465,7 +465,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-        decode_assert flags.zero?, "invalid flags"
+        decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length == 2, "invalid length"
         packet_id = io.read_int
         self.new(packet_id)
@@ -482,7 +482,7 @@ module MQTT
       private abstract def type
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
+        decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length.zero?, "invalid length"
         self.new
       end

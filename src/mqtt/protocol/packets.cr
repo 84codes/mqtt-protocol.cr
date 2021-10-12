@@ -2,10 +2,13 @@ require "./io"
 
 private macro decode_assert(condition, err)
   {% if (err.class_name == "StringLiteral" || err.class_name == "StringInterpolation") %}
+    # err is a string
     ({{condition}} || raise Error::PacketDecode.new {{err}})
   {% elsif (err.class_name == "Call")%}
+    # err is a call that we assume returns a string e.g. sprintf()
     ({{condition}} || raise Error::PacketDecode.new {{err}})
   {% else %}
+    # here we just assume it's a class name
     ({{condition}} || raise {{err}}.new)
   {% end %}
 end
@@ -32,6 +35,8 @@ module MQTT
           when Connack::TYPE     then Connack.from_io(io, flags, remaining_length)
           when Publish::TYPE     then Publish.from_io(io, flags, remaining_length)
           when PubAck::TYPE      then PubAck.from_io(io, flags, remaining_length)
+          when PubRec::TYPE      then PubRec.from_io(io, flags, remaining_length)
+          when PubRel::TYPE      then PubRel.from_io(io, flags, remaining_length)
           when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
           when UnsubAck::TYPE    then UnsubAck.from_io(io, flags, remaining_length)
           when PingReq::TYPE     then PingReq.from_io(io, flags, remaining_length)
@@ -263,6 +268,49 @@ module MQTT
         io.write_int(packet_id)
       end
     end
+
+    struct PubRec < Packet
+      TYPE = 5u8
+
+      getter packet_id
+
+      def initialize(@packet_id : UInt16)
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
+        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
+        packet_id = io.read_int
+        new(packet_id)
+      end
+
+      def to_io(io)
+        io.write_byte (TYPE << 4)
+        io.write_remaining_length 2
+        io.write_int(packet_id)
+      end
+    end
+
+    struct PubRel < Packet
+      TYPE = 6u8
+
+      getter packet_id
+
+      def initialize(@packet_id : UInt16)
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
+        decode_assert flags == 2, sprintf("invalid flags: %04b", flags)
+        packet_id = io.read_int
+        new(packet_id)
+      end
+
+      def to_io(io)
+        io.write_byte (TYPE << 4) | 2u8
+        io.write_remaining_length 2
+        io.write_int(packet_id)
+      end
+    end
+
 
     struct Unsubscribe < Packet
       TYPE = 10u8

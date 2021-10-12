@@ -219,7 +219,90 @@ describe MQTT::Protocol::Packet do
 
         end
       end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          packet_id = 123u16
+          puback = MQTT::Protocol::PubAck.new(packet_id)
+          puback.to_io(io)
+          mio.rewind
+
+          parsed_puback = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::PubAck
+          parsed_puback.packet_id.should eq packet_id
+        end
+      end
     end
+
+    describe "PubRec" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          packet_id = 123
+          io.write_byte (5u8 << 4)
+          io.write_remaining_length 2
+          io.write_int packet_id
+          mio.rewind
+
+          pubrec = MQTT::Protocol::Packet.from_io(mio)
+          pubrec.should be_a MQTT::Protocol::PubRec
+          pubrec = pubrec.as MQTT::Protocol::PubRec
+          pubrec.packet_id.should eq packet_id
+
+        end
+      end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          packet_id = 123u16
+          pubrec = MQTT::Protocol::PubRec.new(packet_id)
+          pubrec.to_io(io)
+          mio.rewind
+
+          parsed_pubrec = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::PubRec
+          parsed_pubrec.packet_id.should eq packet_id
+        end
+      end
+    end
+
+    describe "PubRel" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          packet_id = 123
+          io.write_byte (6u8 << 4) | 2u8
+          io.write_remaining_length 2
+          io.write_int packet_id
+          mio.rewind
+
+          pubrel = MQTT::Protocol::Packet.from_io(mio)
+          pubrel.should be_a MQTT::Protocol::PubRel
+          pubrel = pubrel.as MQTT::Protocol::PubRel
+          pubrel.packet_id.should eq packet_id
+
+        end
+      end
+
+      describe "#to_io" do
+        it "can write" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          packet_id = 123u16
+          pubrel = MQTT::Protocol::PubRel.new(packet_id)
+          pubrel.to_io(io)
+          mio.rewind
+
+          parsed_pubrel = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::PubRel
+          parsed_pubrel.packet_id.should eq packet_id
+        end
+      end
+    end
+
 
     describe "Unsubscribe" do
       describe "#from_io" do

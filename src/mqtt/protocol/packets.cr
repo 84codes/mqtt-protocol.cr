@@ -322,7 +322,7 @@ module MQTT
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-        decode_assert flags == 2, sprintf("invalid flags: %04b", flags)
+        decode_assert flags == 2, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length == 2, sprintf("invalid length: %d", remaining_length)
         packet_id = io.read_int
         new(packet_id)

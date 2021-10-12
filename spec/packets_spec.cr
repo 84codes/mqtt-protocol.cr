@@ -201,6 +201,25 @@ describe MQTT::Protocol::Packet do
       end
     end
 
+    describe "PubAck" do
+      describe "#from_io" do
+        it "is parsed" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          packet_id = 123
+          io.write_byte (4u8 << 4)
+          io.write_remaining_length 2
+          io.write_int packet_id
+          mio.rewind
+
+          puback = MQTT::Protocol::Packet.from_io(mio)
+          puback.should be_a MQTT::Protocol::PubAck
+          puback = puback.as MQTT::Protocol::PubAck
+          puback.packet_id.should eq packet_id
+
+        end
+      end
+    end
 
     describe "Unsubscribe" do
       describe "#from_io" do

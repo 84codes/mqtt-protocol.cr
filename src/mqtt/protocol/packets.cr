@@ -31,6 +31,7 @@ module MQTT
           when Connect::TYPE     then Connect.from_io(io, flags, remaining_length)
           when Connack::TYPE     then Connack.from_io(io, flags, remaining_length)
           when Publish::TYPE     then Publish.from_io(io, flags, remaining_length)
+          when PubAck::TYPE      then PubAck.from_io(io, flags, remaining_length)
           when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
           when UnsubAck::TYPE    then UnsubAck.from_io(io, flags, remaining_length)
           when PingReq::TYPE     then PingReq.from_io(io, flags, remaining_length)
@@ -239,6 +240,27 @@ module MQTT
         io.write_string topic
         io.write_int packet_id.not_nil! if qos.positive?
         io.write_bytes_raw(body)
+      end
+    end
+
+    struct PubAck < Packet
+      TYPE = 4u8
+
+      getter packet_id
+
+      def initialize(@packet_id : UInt16)
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
+        decode_assert flags.zero?, sprintf("invalid flags: %04b", flags)
+        packet_id = io.read_int
+        new(packet_id)
+      end
+
+      def to_io(io)
+        io.write_byte (TYPE << 4)
+        io.write_remaining_length 2
+        io.write_int(packet_id)
       end
     end
 

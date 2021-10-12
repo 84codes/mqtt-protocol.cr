@@ -4,7 +4,7 @@ private macro decode_assert(condition, err)
   {% if (err.class_name == "StringLiteral" || err.class_name == "StringInterpolation") %}
     # err is a string
     ({{condition}} || raise Error::PacketDecode.new {{err}})
-  {% elsif (err.class_name == "Call")%}
+  {% elsif (err.class_name == "Call") %}
     # err is a call that we assume returns a string e.g. sprintf()
     ({{condition}} || raise Error::PacketDecode.new {{err}})
   {% else %}
@@ -37,6 +37,8 @@ module MQTT
           when PubAck::TYPE      then PubAck.from_io(io, flags, remaining_length)
           when PubRec::TYPE      then PubRec.from_io(io, flags, remaining_length)
           when PubRel::TYPE      then PubRel.from_io(io, flags, remaining_length)
+          when Subscribe::TYPE   then Subscribe.from_io(io, flags, remaining_length)
+          when SubAck::TYPE      then SubAck.from_io(io, flags, remaining_length)
           when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
           when UnsubAck::TYPE    then UnsubAck.from_io(io, flags, remaining_length)
           when PingReq::TYPE     then PingReq.from_io(io, flags, remaining_length)
@@ -311,6 +313,106 @@ module MQTT
       end
     end
 
+    struct Subscribe < Packet
+      TYPE = 8u8
+      record TopicFilter, topic : String, qos : UInt8
+
+      getter topic_filters, packet_id
+
+      def initialize(@topic_filters : Array(TopicFilter), @packet_id : UInt16)
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
+        decode_assert flags == 2, "invalid flags"
+        decode_assert remaining_length > 2, "protocol violation"
+        packet_id = io.read_int
+
+        bytes_to_read = remaining_length - 2
+        topic_filters = Array(TopicFilter).new
+        while bytes_to_read > 0
+          topic = io.read_string
+          qos = io.read_byte
+          topic_filters << TopicFilter.new(topic, qos)
+          # 2 is Int32 prefix topic length, the topic bytesize, 1 is the QoS
+          bytes_to_read -= (2 + topic.bytesize + 1)
+        end
+        self.new(topic_filters, packet_id)
+      end
+
+      def to_io(io)
+        flags = 0b0010
+        io.write_byte((TYPE << 4) | flags)
+        io.write_remaining_length remaining_length
+        io.write_int(@packet_id)
+        @topic_filters.each do |topic_filter|
+          io.write_string(topic_filter.topic)
+          io.write_byte(topic_filter.qos)
+        end
+      end
+
+      private def remaining_length
+        # This is the length of variable header (2 bytes) plus the length of the payload.
+        length = 2
+        @topic_filters.each do |topic_filter|
+          # 2 is Int32 prefix topic length, the topic bytesize, 1 is the QoS
+          length += (2 + topic_filter.topic.bytesize + 1)
+        end
+        length
+      end
+    end
+
+    struct SubAck < Packet
+      TYPE = 9u8
+      enum ReturnCode : UInt8
+        QoS0    =   0
+        QoS1    =   1
+        QoS2    =   2
+        Failure = 128
+
+        def self.from_int(value)
+          case value
+          when 0
+            QoS0
+          when 1
+            QoS1
+          when 2
+            QoS2
+          when 128
+            Failure
+          else
+            raise Error::PacketDecode.new "invalid return code #{value}"
+          end
+        end
+      end
+
+      getter return_codes, packet_id
+
+      def initialize(@return_codes : Array(ReturnCode), @packet_id : UInt16)
+      end
+
+      def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
+        decode_assert flags.zero?, "invalid flags"
+        decode_assert remaining_length > 2, "protocol violation"
+        packet_id = io.read_int
+        bytes_to_read = remaining_length - 2
+        return_codes = Array(ReturnCode).new
+        while bytes_to_read > 0
+          return_code = io.read_byte
+          return_codes << ReturnCode.from_int(return_code)
+          bytes_to_read -= 1
+        end
+        self.new(return_codes, packet_id)
+      end
+
+      def to_io(io)
+        io.write_byte(TYPE << 4)
+        io.write_remaining_length 2 + @return_codes.size
+        io.write_int(@packet_id)
+        @return_codes.each do |return_code|
+          io.write_byte(return_code.to_u8)
+        end
+      end
+    end
 
     struct Unsubscribe < Packet
       TYPE = 10u8

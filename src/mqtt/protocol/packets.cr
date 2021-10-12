@@ -1,5 +1,4 @@
 require "./io"
-
 private macro decode_assert(condition, err, *args)
   {% if (err.class_name == "StringLiteral" || err.class_name == "StringInterpolation") %}
     # err is a string
@@ -192,7 +191,7 @@ module MQTT
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
 
         connack_flags = io.read_byte
-        decode_assert (connack_flags & 0b11111110).zero?, sprintf("invalid connack flags: %08b", connack_flags)
+        decode_assert (connack_flags & 0b11111110).zero?, MQTT::Protocol::Error::InvalidConnackFlags, connack_flags
         session_present = (connack_flags & 1u8) > 0
 
         return_code = io.read_byte

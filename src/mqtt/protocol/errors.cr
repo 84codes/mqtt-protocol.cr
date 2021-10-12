@@ -9,9 +9,16 @@ module MQTT
 
       class InvalidFlags < PacketDecode
         def initialize(flags : UInt8)
-          super sprintf("invalid flags: %b", flags)
+          super sprintf("invalid flags: %04b", flags)
         end
       end
+
+      class InvalidConnackFlags < PacketDecode
+        def initialize(flags : UInt8)
+          super sprintf("invalid connack flags: %08b", flags)
+        end
+      end
+
 
       abstract class Connect < Error
         abstract def return_code : UInt8

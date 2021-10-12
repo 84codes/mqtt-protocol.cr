@@ -166,7 +166,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0u8           # return code, 0 = Accepted
           mio.rewind
 
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid connack flags/) do
+          expect_raises(MQTT::Protocol::Error::InvalidConnackFlags) do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end

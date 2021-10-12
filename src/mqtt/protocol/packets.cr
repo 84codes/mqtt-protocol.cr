@@ -19,11 +19,11 @@ module MQTT
     abstract struct Packet
       abstract def to_io(io : MQTT::Protocol::IO)
 
-      def self.from_io(io : ::IO)
+      def self.from_io(io : ::IO) : Packet
         from_io MQTT::Protocol::IO.new(io)
       end
 
-      def self.from_io(io : MQTT::Protocol::IO)
+      def self.from_io(io : MQTT::Protocol::IO) : Packet
         first_byte = io.read_byte || raise(::IO::EOFError.new)
         type = first_byte >> 4
         flags = first_byte & 0b00001111
@@ -45,7 +45,7 @@ module MQTT
           when PingResp::TYPE    then PingResp.from_io(io, flags, remaining_length)
           when Disconnect::TYPE  then Disconnect.from_io(io, flags, remaining_length)
           else
-            decode_assert false, "invalid packet type"
+            raise Error::PacketDecode.new "invalid packet type #{type.to_u8}"
           end
         packet
       end

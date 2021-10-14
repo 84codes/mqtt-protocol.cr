@@ -19,7 +19,6 @@ module MQTT
         end
       end
 
-
       abstract class Connect < Error
         abstract def return_code : UInt8
       end
@@ -54,8 +53,8 @@ module MQTT
         end
       end
 
-      class InvalidCredentials < Connect
-        def initialize(msg = "invalid credentials")
+      class BadCredentials < Connect
+        def initialize(msg = "bad credentials, invalid format")
           super(msg)
         end
 

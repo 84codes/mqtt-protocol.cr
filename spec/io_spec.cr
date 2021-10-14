@@ -1,7 +1,6 @@
 require "./spec_helper"
 
 describe MQTT::Protocol::IO do
-
   it "can write int" do
     mio = IO::Memory.new
     io = MQTT::Protocol::IO.new(mio)
@@ -96,7 +95,6 @@ describe MQTT::Protocol::IO do
     io.write_remaining_length(16_383)
     mio.rewind
 
-
     len1 = Bytes.new(2)
     len2 = Bytes.new(2)
 
@@ -117,7 +115,6 @@ describe MQTT::Protocol::IO do
     io.write_remaining_length(2_097_151)
     mio.rewind
 
-
     len1 = Bytes.new(3)
     len2 = Bytes.new(3)
 
@@ -137,7 +134,6 @@ describe MQTT::Protocol::IO do
     io.write_remaining_length(2_097_152)
     io.write_remaining_length(268_435_455)
     mio.rewind
-
 
     len1 = Bytes.new(4)
     len2 = Bytes.new(4)

@@ -16,17 +16,17 @@ describe MQTT::Protocol::Packet do
     end
 
     describe "Connect" do
-        it "validates flags" do
-          mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
-          io.write_byte 0b00010100u8 # connect
-          io.write_remaining_length 10u8
-          mio.rewind
+      it "validates flags" do
+        mio = IO::Memory.new
+        io = MQTT::Protocol::IO.new(mio)
+        io.write_byte 0b00010100u8 # connect
+        io.write_remaining_length 10u8
+        mio.rewind
 
-          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-            connect = MQTT::Protocol::Packet.from_io(mio)
-          end
+        expect_raises(MQTT::Protocol::Error::InvalidFlags) do
+          connect = MQTT::Protocol::Packet.from_io(mio)
         end
+      end
       describe "#from_io" do
         it "validates protocol name" do
           mio = IO::Memory.new

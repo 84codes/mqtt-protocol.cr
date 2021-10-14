@@ -1,4 +1,5 @@
 require "./io"
+
 private macro decode_assert(condition, err, *args)
   {% if (err.class_name == "StringLiteral" || err.class_name == "StringInterpolation") %}
     # err is a string

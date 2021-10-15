@@ -184,6 +184,21 @@ describe MQTT::Protocol::IO do
     data.should eq "hello world"
   end
 
+  it "does not read a string containing null character" do
+    mio = IO::Memory.new
+    str1 = "hello"
+    str2 = "world"
+    (2 + str1.bytesize + str2.bytesize).to_u16.to_io(mio, ::IO::ByteFormat::NetworkEndian)
+    mio.write str1.to_slice
+    0x0000u16.to_io(mio, ::IO::ByteFormat::NetworkEndian)
+    mio.write str2.to_slice
+    mio.rewind
+    io = MQTT::Protocol::IO.new(mio)
+    expect_raises(MQTT::Protocol::Error::PacketDecode) do
+      io.read_string
+    end
+  end
+
   it "can read remaining length 1 byte" do
     mio = IO::Memory.new
     mio.write_byte 0x00

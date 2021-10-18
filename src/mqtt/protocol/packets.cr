@@ -235,6 +235,8 @@ module MQTT
         if qos.positive?
           packet_id = io.read_int
           remaining_length -= 2
+        else
+          decode_assert dup == false, "DUP must be 0 for QoS 0 messages"
         end
         payload = io.read_bytes(remaining_length.to_u16)
         self.new(topic, payload, packet_id, dup, qos, retain)
@@ -250,6 +252,8 @@ module MQTT
         remaining_length += (2 + topic.bytesize) + payload.bytesize
         if qos.positive?
           remaining_length += 2 # packet_id
+        else
+          raise MQTT::Protocol::Error::PacketEncode.new("DUP must be 0 for QoS 0 messages") if dup
         end
         io.write_remaining_length remaining_length
         io.write_string topic

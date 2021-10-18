@@ -263,6 +263,26 @@ describe MQTT::Protocol::Packet do
           publish.topic.should eq topic
           publish.payload.should eq payload
         end
+
+        it "raises error if dup is set for QoS 0 messages" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          topic = "a/b/c"
+          payload = "foobar and barfoo".to_slice
+          remaining_length = topic.bytesize + payload.size + 2 # 2 = sizeof topic len
+
+          io.write_byte 0b00111000u8
+          io.write_remaining_length remaining_length
+          io.write_string topic
+          io.write_bytes_raw payload
+
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(io)
+          end
+        end
       end
 
       describe "#to_io" do
@@ -283,6 +303,20 @@ describe MQTT::Protocol::Packet do
           parsed_publish.topic.should eq topic
           parsed_publish.payload.should eq payload
           parsed_publish.packet_id.not_nil!.should eq packet_id
+        end
+
+        it "raises error if dup is set for QoS 0 messages" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          topic = "a/b/c"
+          payload = "foobar and barfoo".to_slice
+          packet_id = 100u16
+          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, true, 0, false)
+
+          expect_raises(MQTT::Protocol::Error::PacketEncode) do
+            publish.to_io(io)
+          end
         end
       end
     end

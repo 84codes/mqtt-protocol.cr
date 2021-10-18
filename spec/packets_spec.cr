@@ -124,6 +124,22 @@ describe MQTT::Protocol::Packet do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end
+
+        it "validates that clean_session is false when empty client_id" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b00010000u8 # connect
+          io.write_remaining_length 10u8
+          io.write_string "MQTT"
+          io.write_byte 4u8        # protocol = 4 (3.1.1)
+          io.write_byte 0b00000000 # Connect flags
+          io.write_int 60u16       # keepalive = 60
+          io.write_string ""
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::IdentifierRejected) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
       end
 
       describe "#to_io" do

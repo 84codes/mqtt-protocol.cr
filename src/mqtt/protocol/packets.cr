@@ -104,7 +104,7 @@ module MQTT
         client_id = io.read_string(client_id_len)
 
         if client_id.to_s.empty?
-          decode_assert clean_session == true, "must set clean session if client_id is empty"
+          decode_assert clean_session == true, Error::IdentifierRejected
           client_id = "gen-#{Random::Secure.urlsafe_base64(24)}"
         end
 

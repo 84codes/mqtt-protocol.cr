@@ -319,6 +319,17 @@ describe MQTT::Protocol::Packet do
           end
         end
       end
+
+      describe "#initialize" do
+        it "raises an error if QoS is 3" do
+          topic = "a/b/c"
+          payload = "foobar and barfoo".to_slice
+          packet_id = 100u16
+          expect_raises(ArgumentError) do
+            MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 3, false)
+          end
+        end
+      end
     end
 
     describe "PubAck" do

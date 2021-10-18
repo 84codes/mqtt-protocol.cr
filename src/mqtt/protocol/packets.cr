@@ -223,6 +223,7 @@ module MQTT
       getter? dup, retain
 
       def initialize(@topic : String, @payload : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
+        raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)

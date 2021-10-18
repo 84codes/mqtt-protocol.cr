@@ -540,6 +540,22 @@ describe MQTT::Protocol::Packet do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end
+
+        it "raises if QoS is > 2" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b10000010u8 # Subscribe
+          # 2 for variable header, 2 for Int32, topic size and qos
+          io.write_remaining_length 2 + 2 + "MyTopicFilter".bytesize + 1
+          io.write_int(55u16)
+          io.write_string("MyTopicFilter")
+          io.write_byte(3u8)
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
       end
 
       describe "#to_io" do

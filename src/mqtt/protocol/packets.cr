@@ -369,6 +369,7 @@ module MQTT
         while bytes_to_read > 0
           topic = io.read_string
           qos = io.read_byte
+          decode_assert qos < 3, "Malformed packet"
           topic_filters << TopicFilter.new(topic, qos)
           # 2 is Int32 prefix topic length, the topic bytesize, 1 is the QoS
           bytes_to_read -= (2 + topic.bytesize + 1)

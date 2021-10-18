@@ -24,9 +24,10 @@ describe MQTT::Protocol::Packet do
         mio.rewind
 
         expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-          connect = MQTT::Protocol::Packet.from_io(mio)
+          MQTT::Protocol::Packet.from_io(mio)
         end
       end
+
       describe "#from_io" do
         it "validates protocol name" do
           mio = IO::Memory.new
@@ -90,6 +91,23 @@ describe MQTT::Protocol::Packet do
           connect = connect.as MQTT::Protocol::Connect
           connect.client_id.should eq "foobar"
           connect.keepalive.should eq 60
+        end
+
+        it "validates the connect flags based on will [MQTT-3.1.2-11]" do
+          remaining_length = 10
+
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b00010000u8 # connect
+          io.write_remaining_length remaining_length.to_u8
+          io.write_string "MQTT"
+          io.write_byte 4u8        # protocol = 4 (3.1.1)
+          io.write_byte 0b00101000 # Connect flags
+          io.write_int 60u16       # keepalive = 60
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
         end
       end
 

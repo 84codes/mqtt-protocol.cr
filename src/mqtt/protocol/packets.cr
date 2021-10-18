@@ -84,6 +84,10 @@ module MQTT
         decode_assert connect_flags.bit(0) == 0, "reserved connect flag set"
         clean_session = connect_flags.bit(1) == 1
         has_will = connect_flags.bit(2) == 1
+        unless has_will
+          will_flags = (connect_flags & 0b00111000)
+          decode_assert will_flags.zero?, "Invalid will flags, must be zero"
+        end
         will_qos = (connect_flags & 0b00011000) >> 3
         decode_assert will_qos < 3, "invalid will qos: #{will_qos}"
 

@@ -109,6 +109,21 @@ describe MQTT::Protocol::Packet do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end
+
+        it "validates that the password flag is not set when username flag is no set [MQTT-3.1.2-22]" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b00010000u8 # connect
+          io.write_remaining_length 10u8
+          io.write_string "MQTT"
+          io.write_byte 4u8        # protocol = 4 (3.1.1)
+          io.write_byte 0b01000000 # Connect flags
+          io.write_int 60u16       # keepalive = 60
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
       end
 
       describe "#to_io" do

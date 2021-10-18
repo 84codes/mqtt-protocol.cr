@@ -95,6 +95,8 @@ module MQTT
         has_password = connect_flags.bit(6) == 1
         has_username = connect_flags.bit(7) == 1
 
+        decode_assert has_username || !has_password, "Password cannot be set without a username"
+
         keepalive = io.read_int
 
         client_id_len = io.read_int
@@ -135,11 +137,12 @@ module MQTT
           connect_flags |= 0b1000_0000u8
           remaining_length += sizeof(UInt16)
           remaining_length += u.bytesize
-        end
-        if pwd = password
-          connect_flags |= 0b0100_0000u8
-          remaining_length += sizeof(UInt16)
-          remaining_length += pwd.bytesize
+
+          if pwd = password
+            connect_flags |= 0b0100_0000u8
+            remaining_length += sizeof(UInt16)
+            remaining_length += pwd.bytesize
+          end
         end
         connect_flags |= 0b0000_0010u8 if clean_session?
         io.write_byte (TYPE << 4)

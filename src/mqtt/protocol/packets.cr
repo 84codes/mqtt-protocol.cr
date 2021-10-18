@@ -224,6 +224,7 @@ module MQTT
 
       def initialize(@topic : String, @payload : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
         raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
+        raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
@@ -241,6 +242,8 @@ module MQTT
         end
         payload = io.read_bytes(remaining_length.to_u16)
         self.new(topic, payload, packet_id, dup, qos, retain)
+      rescue ex : ArgumentError
+        raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end
 
       def to_io(io)

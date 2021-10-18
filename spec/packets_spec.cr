@@ -283,6 +283,26 @@ describe MQTT::Protocol::Packet do
             MQTT::Protocol::Packet.from_io(io)
           end
         end
+
+        it "raises PacketDecode if topic contains wildcard" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          topic = "a/+/c"
+          payload = "foobar and barfoo".to_slice
+          remaining_length = topic.bytesize + payload.size + 2 # 2 = sizeof topic len
+
+          io.write_byte 0b00111000u8
+          io.write_remaining_length remaining_length
+          io.write_string topic
+          io.write_bytes_raw payload
+
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(io)
+          end
+        end
       end
 
       describe "#to_io" do
@@ -327,6 +347,23 @@ describe MQTT::Protocol::Packet do
           packet_id = 100u16
           expect_raises(ArgumentError) do
             MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 3, false)
+          end
+        end
+
+        describe "with wildcard in topic" do
+          it "should raise ArguementError" do
+            topic = "a/#"
+            payload = "foobar and barfoo".to_slice
+            packet_id = 100u16
+
+            expect_raises(ArgumentError) do
+              MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+            end
+
+            topic = "a/+/c"
+            expect_raises(ArgumentError) do
+              MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+            end
           end
         end
       end

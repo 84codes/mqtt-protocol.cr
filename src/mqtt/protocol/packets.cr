@@ -381,6 +381,11 @@ module MQTT
         io.write_byte((TYPE << 4) | flags)
         io.write_remaining_length remaining_length
         io.write_int(@packet_id)
+
+        if @topic_filters.empty?
+          raise MQTT::Protocol::Error::PacketEncode.new("Subscribe Packet must contain TopicFilters")
+        end
+
         @topic_filters.each do |topic_filter|
           io.write_string(topic_filter.topic)
           io.write_byte(topic_filter.qos)

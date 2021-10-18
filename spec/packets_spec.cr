@@ -562,6 +562,16 @@ describe MQTT::Protocol::Packet do
             topic_filter.should eq topic_filters[index]
           end
         end
+
+        it "should not allow empty TopicFilters" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          topic_filters = [] of MQTT::Protocol::Subscribe::TopicFilter
+          subscribe = MQTT::Protocol::Subscribe.new(topic_filters, 65u16)
+          expect_raises(MQTT::Protocol::Error::PacketEncode) do
+            subscribe.to_io(io)
+          end
+        end
       end
     end
 

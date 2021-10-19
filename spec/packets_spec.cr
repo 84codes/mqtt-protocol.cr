@@ -175,6 +175,16 @@ describe MQTT::Protocol::Packet do
       end
     end
 
+    describe "Will" do
+      describe "#initialize" do
+        it "does not support wildcard topics" do
+          expect_raises(ArgumentError) do
+            MQTT::Protocol::Will.new("topic/#", "body".to_slice, 1, false)
+          end
+        end
+      end
+    end
+
     describe "Connack" do
       describe "#from_io" do
         it "is parsed" do

@@ -630,6 +630,106 @@ describe MQTT::Protocol::Packet do
             subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
             subscribe.topic_filters.first.topic.should eq topic
           end
+
+          it "should not support multiple '#'" do
+            topic = "a/#/s/#"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+            expect_raises(MQTT::Protocol::Error::PacketDecode) do
+              MQTT::Protocol::Packet.from_io(mio)
+            end
+          end
+        end
+
+        describe "with single-level wildcard" do
+          it "should support '+' not in the end" do
+            topic = "a/+/b"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe.topic_filters.first.topic.should eq topic
+          end
+
+          it "should not support '+' unless covers entire topic level" do
+            topic = "a/a+/b"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            expect_raises(MQTT::Protocol::Error::PacketDecode) do
+              MQTT::Protocol::Packet.from_io(mio)
+            end
+          end
+
+          it "should support '+' in first level" do
+            topic = "+/a/b"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe.topic_filters.first.topic.should eq topic
+          end
+
+          it "should support '+' in last level" do
+            topic = "a/b/+"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe.topic_filters.first.topic.should eq topic
+          end
+
+          it "should not support a/+b/c+/#" do
+            topic = "a/+b/c+/#"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            expect_raises(MQTT::Protocol::Error::PacketDecode) do
+              MQTT::Protocol::Packet.from_io(mio)
+            end
+          end
         end
       end
 

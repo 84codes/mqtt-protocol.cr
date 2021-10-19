@@ -357,10 +357,22 @@ module MQTT
       TYPE = 8u8
       record TopicFilter, topic : String, qos : UInt8 do
         def initialize(@topic : String, @qos : UInt8)
-          if !@topic.index("#").nil? && (!@topic.ends_with?("/#") && @topic.size > 1)
+          if @topic.count("#") > 1
+            raise ArgumentError.new("There can only be one multi-level wildcard in a TopicFilter")
+          end
+
+          if !@topic.index("#").nil? && !(@topic.ends_with?("/#") || @topic.size == 1)
             raise ArgumentError.new("A multi-level wildcard TopicFilter
                                      must have '#' as the last character")
           end
+
+          levels = @topic.split("/")
+          plus_levels = levels.select do |level|
+            level.count('+').positive? && level.size > 1
+          end
+          return if plus_levels.empty?
+          raise ArgumentError.new("A single-level wildcard TopicFilter most cover an entire level
+                                   on its own.")
         end
       end
 

@@ -228,6 +228,8 @@ module MQTT
       def initialize(@topic : String, @payload : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
         raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
         raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
+        raise ArgumentError.new("Topic must be between atleast 1 char long") if @topic.size < 1
+        raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
@@ -357,6 +359,8 @@ module MQTT
       TYPE = 8u8
       record TopicFilter, topic : String, qos : UInt8 do
         def initialize(@topic : String, @qos : UInt8)
+          raise ArgumentError.new("Topic must be between atleast 1 char long") if @topic.size < 1
+          raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
           if @topic.count("#") > 1
             raise ArgumentError.new("There can only be one multi-level wildcard in a TopicFilter")
           end

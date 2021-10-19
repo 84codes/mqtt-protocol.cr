@@ -24,6 +24,7 @@ module MQTT
         from_io MQTT::Protocol::IO.new(io)
       end
 
+      # ameba:disable Metrics/CyclomaticComplexity
       def self.from_io(io : MQTT::Protocol::IO) : Packet
         first_byte = io.read_byte || raise(::IO::EOFError.new)
         type = first_byte >> 4
@@ -115,6 +116,7 @@ module MQTT
         self.new(client_id, clean_session, keepalive, username, password, will)
       end
 
+      # ameba:disable Metrics/CyclomaticComplexity
       def to_io(io)
         # Remaining length is at least 10:
         # protocol name (str) + protocol version (byte) + connect flags (byte) + keep alive (int)

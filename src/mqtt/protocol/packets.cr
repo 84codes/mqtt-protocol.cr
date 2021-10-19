@@ -355,7 +355,14 @@ module MQTT
 
     struct Subscribe < Packet
       TYPE = 8u8
-      record TopicFilter, topic : String, qos : UInt8
+      record TopicFilter, topic : String, qos : UInt8 do
+        def initialize(@topic : String, @qos : UInt8)
+          if !@topic.index("#").nil? && (!@topic.ends_with?("/#") && @topic.size > 1)
+            raise ArgumentError.new("A multi-level wildcard TopicFilter
+                                     must have '#' as the last character")
+          end
+        end
+      end
 
       getter topic_filters, packet_id
 
@@ -378,6 +385,8 @@ module MQTT
           bytes_to_read -= (2 + topic.bytesize + 1)
         end
         self.new(topic_filters, packet_id)
+      rescue ex : ArgumentError
+        raise Error::PacketDecode.new(ex.message)
       end
 
       def to_io(io)

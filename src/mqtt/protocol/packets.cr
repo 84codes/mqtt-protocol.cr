@@ -24,6 +24,7 @@ module MQTT
         from_io MQTT::Protocol::IO.new(io)
       end
 
+      # ameba:disable Metrics/CyclomaticComplexity
       def self.from_io(io : MQTT::Protocol::IO) : Packet
         first_byte = io.read_byte || raise(::IO::EOFError.new)
         type = first_byte >> 4
@@ -84,12 +85,18 @@ module MQTT
         decode_assert connect_flags.bit(0) == 0, "reserved connect flag set"
         clean_session = connect_flags.bit(1) == 1
         has_will = connect_flags.bit(2) == 1
+        unless has_will
+          will_flags = (connect_flags & 0b00111000)
+          decode_assert will_flags.zero?, "Invalid will flags, must be zero"
+        end
         will_qos = (connect_flags & 0b00011000) >> 3
         decode_assert will_qos < 3, "invalid will qos: #{will_qos}"
 
         will_retain = connect_flags.bit(5) == 1
         has_password = connect_flags.bit(6) == 1
         has_username = connect_flags.bit(7) == 1
+
+        decode_assert has_username || !has_password, "Password cannot be set without a username"
 
         keepalive = io.read_int
 
@@ -98,7 +105,7 @@ module MQTT
         client_id = io.read_string(client_id_len)
 
         if client_id.to_s.empty?
-          decode_assert clean_session == true, "must set clean session if client_id is empty"
+          decode_assert clean_session == true, Error::IdentifierRejected
           client_id = "gen-#{Random::Secure.urlsafe_base64(24)}"
         end
 
@@ -109,6 +116,7 @@ module MQTT
         self.new(client_id, clean_session, keepalive, username, password, will)
       end
 
+      # ameba:disable Metrics/CyclomaticComplexity
       def to_io(io)
         # Remaining length is at least 10:
         # protocol name (str) + protocol version (byte) + connect flags (byte) + keep alive (int)
@@ -131,11 +139,12 @@ module MQTT
           connect_flags |= 0b1000_0000u8
           remaining_length += sizeof(UInt16)
           remaining_length += u.bytesize
-        end
-        if pwd = password
-          connect_flags |= 0b0100_0000u8
-          remaining_length += sizeof(UInt16)
-          remaining_length += pwd.bytesize
+
+          if pwd = password
+            connect_flags |= 0b0100_0000u8
+            remaining_length += sizeof(UInt16)
+            remaining_length += pwd.bytesize
+          end
         end
         connect_flags |= 0b0000_0010u8 if clean_session?
         io.write_byte (TYPE << 4)
@@ -156,12 +165,15 @@ module MQTT
       getter? retain
 
       def initialize(@topic : String, @payload : Bytes, @qos : UInt8, @retain : Bool)
+        raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
       end
 
       def self.from_io(io : MQTT::Protocol::IO, qos : UInt8, retain : Bool)
         topic = io.read_string
         payload = io.read_bytes
         self.new(topic, payload, qos, retain)
+      rescue ex : ArgumentError
+        raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end
 
       def to_io(io)
@@ -216,6 +228,10 @@ module MQTT
       getter? dup, retain
 
       def initialize(@topic : String, @payload : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
+        raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
+        raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
+        raise ArgumentError.new("Topic must be between atleast 1 char long") if @topic.size < 1
+        raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
@@ -228,9 +244,13 @@ module MQTT
         if qos.positive?
           packet_id = io.read_int
           remaining_length -= 2
+        else
+          decode_assert dup == false, "DUP must be 0 for QoS 0 messages"
         end
         payload = io.read_bytes(remaining_length.to_u16)
         self.new(topic, payload, packet_id, dup, qos, retain)
+      rescue ex : ArgumentError
+        raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end
 
       def to_io(io)
@@ -243,6 +263,8 @@ module MQTT
         remaining_length += (2 + topic.bytesize) + payload.bytesize
         if qos.positive?
           remaining_length += 2 # packet_id
+        else
+          raise MQTT::Protocol::Error::PacketEncode.new("DUP must be 0 for QoS 0 messages") if dup
         end
         io.write_remaining_length remaining_length
         io.write_string topic
@@ -337,7 +359,28 @@ module MQTT
 
     struct Subscribe < Packet
       TYPE = 8u8
-      record TopicFilter, topic : String, qos : UInt8
+      record TopicFilter, topic : String, qos : UInt8 do
+        def initialize(@topic : String, @qos : UInt8)
+          raise ArgumentError.new("Topic must be between atleast 1 char long") if @topic.size < 1
+          raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
+          if @topic.count("#") > 1
+            raise ArgumentError.new("There can only be one multi-level wildcard in a TopicFilter")
+          end
+
+          if !@topic.index("#").nil? && !(@topic.ends_with?("/#") || @topic.size == 1)
+            raise ArgumentError.new("A multi-level wildcard TopicFilter
+                                     must have '#' as the last character")
+          end
+
+          levels = @topic.split("/")
+          plus_levels = levels.select do |level|
+            level.count('+').positive? && level.size > 1
+          end
+          return if plus_levels.empty?
+          raise ArgumentError.new("A single-level wildcard TopicFilter most cover an entire level
+                                   on its own.")
+        end
+      end
 
       getter topic_filters, packet_id
 
@@ -354,11 +397,14 @@ module MQTT
         while bytes_to_read > 0
           topic = io.read_string
           qos = io.read_byte
+          decode_assert qos < 3, "Malformed packet"
           topic_filters << TopicFilter.new(topic, qos)
           # 2 is Int32 prefix topic length, the topic bytesize, 1 is the QoS
           bytes_to_read -= (2 + topic.bytesize + 1)
         end
         self.new(topic_filters, packet_id)
+      rescue ex : ArgumentError
+        raise Error::PacketDecode.new(ex.message)
       end
 
       def to_io(io)
@@ -366,6 +412,11 @@ module MQTT
         io.write_byte((TYPE << 4) | flags)
         io.write_remaining_length remaining_length
         io.write_int(@packet_id)
+
+        if @topic_filters.empty?
+          raise MQTT::Protocol::Error::PacketEncode.new("Subscribe Packet must contain TopicFilters")
+        end
+
         @topic_filters.each do |topic_filter|
           io.write_string(topic_filter.topic)
           io.write_byte(topic_filter.qos)

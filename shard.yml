@@ -3,6 +3,7 @@ version: 0.1.0
 
 authors:
   - Jon Börjesson <jon@84codes.com>
+  - Anton Dalgren <anton@84codes.com>
 
 description: |
   MQTT 3.1.1 protocol library

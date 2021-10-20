@@ -10,7 +10,11 @@ module MQTT
 
       def read_string(len : UInt16? = nil)
         len = read_int unless len
-        @io.read_string(len)
+        str = @io.read_string(len)
+        if str.includes?('\u0000') || !str.valid_encoding?
+          raise MQTT::Protocol::Error::PacketDecode.new "Illformed UTF-8 string"
+        end
+        str
       end
 
       def read_int

@@ -24,9 +24,10 @@ describe MQTT::Protocol::Packet do
         mio.rewind
 
         expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-          connect = MQTT::Protocol::Packet.from_io(mio)
+          MQTT::Protocol::Packet.from_io(mio)
         end
       end
+
       describe "#from_io" do
         it "validates protocol name" do
           mio = IO::Memory.new
@@ -91,6 +92,54 @@ describe MQTT::Protocol::Packet do
           connect.client_id.should eq "foobar"
           connect.keepalive.should eq 60
         end
+
+        it "validates the connect flags based on will [MQTT-3.1.2-11]" do
+          remaining_length = 10
+
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b00010000u8 # connect
+          io.write_remaining_length remaining_length.to_u8
+          io.write_string "MQTT"
+          io.write_byte 4u8        # protocol = 4 (3.1.1)
+          io.write_byte 0b00101000 # Connect flags
+          io.write_int 60u16       # keepalive = 60
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+
+        it "validates that the password flag is not set when username flag is no set [MQTT-3.1.2-22]" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b00010000u8 # connect
+          io.write_remaining_length 10u8
+          io.write_string "MQTT"
+          io.write_byte 4u8        # protocol = 4 (3.1.1)
+          io.write_byte 0b01000000 # Connect flags
+          io.write_int 60u16       # keepalive = 60
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+
+        it "validates that clean_session is false when empty client_id" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b00010000u8 # connect
+          io.write_remaining_length 10u8
+          io.write_string "MQTT"
+          io.write_byte 4u8        # protocol = 4 (3.1.1)
+          io.write_byte 0b00000000 # Connect flags
+          io.write_int 60u16       # keepalive = 60
+          io.write_string ""
+          mio.rewind
+          expect_raises(MQTT::Protocol::Error::IdentifierRejected) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
       end
 
       describe "#to_io" do
@@ -122,6 +171,16 @@ describe MQTT::Protocol::Packet do
           parsed_connect.username.should eq username
           parsed_connect.password.should eq password
           parsed_connect.will.not_nil!.topic.should eq wtopic
+        end
+      end
+    end
+
+    describe "Will" do
+      describe "#initialize" do
+        it "does not support wildcard topics" do
+          expect_raises(ArgumentError) do
+            MQTT::Protocol::Will.new("topic/#", "body".to_slice, 1, false)
+          end
         end
       end
     end
@@ -214,6 +273,46 @@ describe MQTT::Protocol::Packet do
           publish.topic.should eq topic
           publish.payload.should eq payload
         end
+
+        it "raises error if dup is set for QoS 0 messages" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          topic = "a/b/c"
+          payload = "foobar and barfoo".to_slice
+          remaining_length = topic.bytesize + payload.size + 2 # 2 = sizeof topic len
+
+          io.write_byte 0b00111000u8
+          io.write_remaining_length remaining_length
+          io.write_string topic
+          io.write_bytes_raw payload
+
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(io)
+          end
+        end
+
+        it "raises PacketDecode if topic contains wildcard" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          topic = "a/+/c"
+          payload = "foobar and barfoo".to_slice
+          remaining_length = topic.bytesize + payload.size + 2 # 2 = sizeof topic len
+
+          io.write_byte 0b00111000u8
+          io.write_remaining_length remaining_length
+          io.write_string topic
+          io.write_bytes_raw payload
+
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(io)
+          end
+        end
       end
 
       describe "#to_io" do
@@ -234,6 +333,48 @@ describe MQTT::Protocol::Packet do
           parsed_publish.topic.should eq topic
           parsed_publish.payload.should eq payload
           parsed_publish.packet_id.not_nil!.should eq packet_id
+        end
+
+        it "raises error if dup is set for QoS 0 messages" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          topic = "a/b/c"
+          payload = "foobar and barfoo".to_slice
+          packet_id = 100u16
+          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, true, 0, false)
+
+          expect_raises(MQTT::Protocol::Error::PacketEncode) do
+            publish.to_io(io)
+          end
+        end
+      end
+
+      describe "#initialize" do
+        it "raises an error if QoS is 3" do
+          topic = "a/b/c"
+          payload = "foobar and barfoo".to_slice
+          packet_id = 100u16
+          expect_raises(ArgumentError) do
+            MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 3, false)
+          end
+        end
+
+        describe "with wildcard in topic" do
+          it "should raise ArguementError" do
+            topic = "a/#"
+            payload = "foobar and barfoo".to_slice
+            packet_id = 100u16
+
+            expect_raises(ArgumentError) do
+              MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+            end
+
+            topic = "a/+/c"
+            expect_raises(ArgumentError) do
+              MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+            end
+          end
         end
       end
     end
@@ -409,6 +550,187 @@ describe MQTT::Protocol::Packet do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end
+
+        it "raises if QoS is > 2" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          io.write_byte 0b10000010u8 # Subscribe
+          # 2 for variable header, 2 for Int32, topic size and qos
+          io.write_remaining_length 2 + 2 + "MyTopicFilter".bytesize + 1
+          io.write_int(55u16)
+          io.write_string("MyTopicFilter")
+          io.write_byte(3u8)
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::Packet.from_io(mio)
+          end
+        end
+
+        describe "with multi-level wildcard" do
+          it "should not support '#' not in the end" do
+            topic = "a/#/b"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            expect_raises(MQTT::Protocol::Error::PacketDecode) do
+              MQTT::Protocol::Packet.from_io(mio)
+            end
+          end
+
+          it "should support '#' in the end" do
+            topic = "a/#"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe.topic_filters.first.topic.should eq topic
+          end
+
+          it "should not support '#' on a combined topic level" do
+            topic = "a/as#"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+            expect_raises(MQTT::Protocol::Error::PacketDecode) do
+              MQTT::Protocol::Packet.from_io(mio)
+            end
+          end
+
+          it "should support only '#'" do
+            topic = "#"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe.topic_filters.first.topic.should eq topic
+          end
+
+          it "should not support multiple '#'" do
+            topic = "a/#/s/#"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+            expect_raises(MQTT::Protocol::Error::PacketDecode) do
+              MQTT::Protocol::Packet.from_io(mio)
+            end
+          end
+        end
+
+        describe "with single-level wildcard" do
+          it "should support '+' not in the end" do
+            topic = "a/+/b"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe.topic_filters.first.topic.should eq topic
+          end
+
+          it "should not support '+' unless covers entire topic level" do
+            topic = "a/a+/b"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            expect_raises(MQTT::Protocol::Error::PacketDecode) do
+              MQTT::Protocol::Packet.from_io(mio)
+            end
+          end
+
+          it "should support '+' in first level" do
+            topic = "+/a/b"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe.topic_filters.first.topic.should eq topic
+          end
+
+          it "should support '+' in last level" do
+            topic = "a/b/+"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe.topic_filters.first.topic.should eq topic
+          end
+
+          it "should not support a/+b/c+/#" do
+            topic = "a/+b/c+/#"
+            mio = IO::Memory.new
+            io = MQTT::Protocol::IO.new(mio)
+            io.write_byte 0b10000010u8 # Subscribe
+            # 2 for variable header, 2 for Int32, topic size and qos
+            io.write_remaining_length 2 + 2 + topic.bytesize + 1
+            io.write_int(55u16)
+            io.write_string(topic)
+            io.write_byte(1u8)
+            mio.rewind
+
+            expect_raises(MQTT::Protocol::Error::PacketDecode) do
+              MQTT::Protocol::Packet.from_io(mio)
+            end
+          end
+        end
       end
 
       describe "#to_io" do
@@ -429,6 +751,16 @@ describe MQTT::Protocol::Packet do
           subscribe_packet.packet_id.should eq 65u16
           subscribe_packet.topic_filters.each_with_index do |topic_filter, index|
             topic_filter.should eq topic_filters[index]
+          end
+        end
+
+        it "should not allow empty TopicFilters" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+          topic_filters = [] of MQTT::Protocol::Subscribe::TopicFilter
+          subscribe = MQTT::Protocol::Subscribe.new(topic_filters, 65u16)
+          expect_raises(MQTT::Protocol::Error::PacketEncode) do
+            subscribe.to_io(io)
           end
         end
       end

@@ -348,6 +348,24 @@ describe MQTT::Protocol::Packet do
             publish.to_io(io)
           end
         end
+
+        it "does not raise error when dup is unset for QoS 0 messages" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.new(mio)
+
+          topic = "a/b/c"
+          payload = "foobar and barfoo".to_slice
+          packet_id = 100u16
+          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 0, false)
+          publish.to_io(io)
+          mio.rewind
+
+          parsed_publish = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::Publish
+
+          parsed_publish.topic.should eq topic
+          parsed_publish.payload.should eq payload
+          parsed_publish.dup?.should eq false
+        end
       end
 
       describe "#initialize" do

@@ -264,7 +264,7 @@ module MQTT
         if qos.positive?
           remaining_length += 2 # packet_id
         else
-          raise MQTT::Protocol::Error::PacketEncode.new("DUP must be 0 for QoS 0 messages") if dup
+          raise MQTT::Protocol::Error::PacketEncode.new("DUP must be 0 for QoS 0 messages") if dup?
         end
         io.write_remaining_length remaining_length
         io.write_string topic

@@ -336,16 +336,11 @@ describe MQTT::Protocol::Packet do
         end
 
         it "raises error if dup is set for QoS 0 messages" do
-          mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
-
           topic = "a/b/c"
           payload = "foobar and barfoo".to_slice
           packet_id = 100u16
-          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, true, 0, false)
-
-          expect_raises(MQTT::Protocol::Error::PacketEncode) do
-            publish.to_io(io)
+          expect_raises(ArgumentError) do
+            MQTT::Protocol::Publish.new(topic, payload, packet_id, true, 0, false)
           end
         end
 

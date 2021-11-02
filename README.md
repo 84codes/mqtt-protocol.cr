@@ -123,7 +123,7 @@ mqtt-protocol.cr is a MQTT 3.1.1 serialization library for Crystal
 
   > The Client Identifier (ClientId) MUST be present and MUST be the first field in the CONNECT packet payload.
 
-  The protocol allows empty string for clean_sessions, but will generate a random client_id for this session.
+  The protocol allows empty string for clean_sessions.
 
 - [x] MQTT-3.1.3-4
 

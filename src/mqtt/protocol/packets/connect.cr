@@ -5,7 +5,7 @@ module MQTT
     struct Connect < Packet
       TYPE = 1_u8
 
-      @client_id : String?
+      @client_id : String
       @clean_session : Bool
       @keepalive : UInt16
       @username : String?
@@ -19,10 +19,11 @@ module MQTT
         # Remaining length is at least 10:
         # protocol name (str) + protocol version (byte) + connect flags (byte) + keep alive (int)
         @remaining_length = 10
-        if c = client_id || ""
-          @remaining_length += sizeof(UInt16)
-          @remaining_length += c.bytesize
-        end
+
+        # ClientID
+        @remaining_length += sizeof(UInt16)
+        @remaining_length += client_id.bytesize
+
         if w = will
           @remaining_length += w.bytesize
         end
@@ -73,7 +74,6 @@ module MQTT
 
         if client_id.to_s.empty?
           decode_assert clean_session == true, Error::IdentifierRejected
-          client_id = "gen-#{Random::Secure.urlsafe_base64(24)}"
         end
 
         will = has_will ? Will.from_io(io, will_qos, will_retain) : nil

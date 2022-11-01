@@ -6,7 +6,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: crystal-ameba/github-action@v0.2.12
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -17,7 +17,7 @@ jobs:
     name: Spec
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: crystal-lang/install-crystal@v1
       - run: shards install --ignore-crystal-version
       - run: crystal spec --order random

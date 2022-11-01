@@ -398,7 +398,7 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.new(mio)
           packet_id = 123
-          io.write_byte (4u8 << 4)
+          io.write_byte(4u8 << 4)
           io.write_remaining_length 2
           io.write_int packet_id
           mio.rewind
@@ -430,7 +430,7 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.new(mio)
           packet_id = 123
-          io.write_byte (5u8 << 4)
+          io.write_byte(5u8 << 4)
           io.write_remaining_length 2
           io.write_int packet_id
           mio.rewind

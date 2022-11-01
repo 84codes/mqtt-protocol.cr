@@ -43,7 +43,7 @@ module MQTT
         flags |= 0b0000_1000u8 if dup?
         flags |= 0b0000_0001u8 if retain?
         flags |= (0b0000_0110u8 & (qos << 1)) if qos.positive?
-        io.write_byte ((TYPE << 4) | flags)
+        io.write_byte((TYPE << 4) | flags)
         io.write_remaining_length remaining_length
         io.write_string topic
         io.write_int packet_id.not_nil! if qos.positive?

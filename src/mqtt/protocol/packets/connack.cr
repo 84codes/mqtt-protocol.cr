@@ -34,7 +34,7 @@ module MQTT
       end
 
       def to_io(io)
-        io.write_byte (TYPE << 4)
+        io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length
         io.write_byte session_present? ? 1u8 : 0u8
         io.write_byte return_code.to_u8

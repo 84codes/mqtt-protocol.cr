@@ -99,7 +99,7 @@ module MQTT
           end
         end
         connect_flags |= 0b0000_0010u8 if clean_session?
-        io.write_byte (TYPE << 4)
+        io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length
         io.write_string "MQTT"
         io.write_byte 4u8 # "protocol version"

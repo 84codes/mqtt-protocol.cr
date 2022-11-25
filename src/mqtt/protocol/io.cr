@@ -1,6 +1,8 @@
 module MQTT
   module Protocol
     struct IO
+      getter io
+
       def initialize(@io : ::IO, @byte_format = ::IO::ByteFormat::NetworkEndian)
       end
 

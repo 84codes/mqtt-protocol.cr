@@ -6,6 +6,8 @@ module MQTT
       def initialize(@io : ::IO, @byte_format = ::IO::ByteFormat::NetworkEndian)
       end
 
+      forward_missing_to @io
+
       def read_byte
         @io.read_byte || raise ::IO::EOFError.new
       end

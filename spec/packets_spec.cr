@@ -101,9 +101,9 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length remaining_length.to_u8
           io.write_string "MQTT"
-          io.write_byte 4u8        # protocol = 4 (3.1.1)
-          io.write_byte 0b00101000 # Connect flags
-          io.write_int 60u16       # keepalive = 60
+          io.write_byte 4u8          # protocol = 4 (3.1.1)
+          io.write_byte 0b00101000u8 # Connect flags
+          io.write_int 60u16         # keepalive = 60
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode) do
             MQTT::Protocol::Packet.from_io(mio)
@@ -116,9 +116,9 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length 10u8
           io.write_string "MQTT"
-          io.write_byte 4u8        # protocol = 4 (3.1.1)
-          io.write_byte 0b01000000 # Connect flags
-          io.write_int 60u16       # keepalive = 60
+          io.write_byte 4u8          # protocol = 4 (3.1.1)
+          io.write_byte 0b01000000u8 # Connect flags
+          io.write_int 60u16         # keepalive = 60
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode) do
             MQTT::Protocol::Packet.from_io(mio)
@@ -131,9 +131,9 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length 10u8
           io.write_string "MQTT"
-          io.write_byte 4u8        # protocol = 4 (3.1.1)
-          io.write_byte 0b00000000 # Connect flags
-          io.write_int 60u16       # keepalive = 60
+          io.write_byte 4u8          # protocol = 4 (3.1.1)
+          io.write_byte 0b00000000u8 # Connect flags
+          io.write_int 60u16         # keepalive = 60
           io.write_string ""
           mio.rewind
           expect_raises(MQTT::Protocol::Error::IdentifierRejected) do

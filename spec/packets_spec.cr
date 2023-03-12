@@ -87,8 +87,7 @@ describe MQTT::Protocol::Packet do
 
           connect = MQTT::Protocol::Packet.from_io(mio)
 
-          connect.should be_a MQTT::Protocol::Connect
-          connect = connect.as MQTT::Protocol::Connect
+          connect = connect.should be_a MQTT::Protocol::Connect
           connect.client_id.should eq "foobar"
           connect.keepalive.should eq 60
         end
@@ -166,11 +165,11 @@ describe MQTT::Protocol::Packet do
           connect.to_io(io)
           mio.rewind
 
-          parsed_connect = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::Connect
-
-          parsed_connect.username.should eq username
-          parsed_connect.password.should eq password
-          parsed_connect.will.not_nil!.topic.should eq wtopic
+          connect = MQTT::Protocol::Packet.from_io(io)
+          connect = connect.should be_a MQTT::Protocol::Connect
+          connect.username.should eq username
+          connect.password.should eq password
+          connect.will.not_nil!.topic.should eq wtopic
         end
       end
     end
@@ -198,8 +197,7 @@ describe MQTT::Protocol::Packet do
 
           connect = MQTT::Protocol::Packet.from_io(mio)
 
-          connect.should be_a MQTT::Protocol::Connack
-          connect = connect.as MQTT::Protocol::Connack
+          connect = connect.should be_a MQTT::Protocol::Connack
           connect.session_present?.should be_true
           connect.return_code.value.should eq 0u8
         end
@@ -241,10 +239,10 @@ describe MQTT::Protocol::Packet do
 
           mio.rewind
 
-          parsed_connack = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::Connack
-
-          parsed_connack.return_code.should eq MQTT::Protocol::Connack::ReturnCode::Accepted
-          parsed_connack.session_present?.should be_false
+          connack = MQTT::Protocol::Packet.from_io(io)
+          connack = connack.should be_a MQTT::Protocol::Connack
+          connack.return_code.should eq MQTT::Protocol::Connack::ReturnCode::Accepted
+          connack.session_present?.should be_false
         end
       end
     end
@@ -268,8 +266,7 @@ describe MQTT::Protocol::Packet do
 
           publish = MQTT::Protocol::Packet.from_io(io)
 
-          publish.should be_a MQTT::Protocol::Publish
-          publish = publish.as MQTT::Protocol::Publish
+          publish = publish.should be_a MQTT::Protocol::Publish
           publish.topic.should eq topic
           publish.payload.should eq payload
         end
@@ -328,11 +325,12 @@ describe MQTT::Protocol::Packet do
 
           mio.rewind
 
-          parsed_publish = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::Publish
+          publish = MQTT::Protocol::Packet.from_io(io)
+          publish = publish.should be_a MQTT::Protocol::Publish
 
-          parsed_publish.topic.should eq topic
-          parsed_publish.payload.should eq payload
-          parsed_publish.packet_id.not_nil!.should eq packet_id
+          publish.topic.should eq topic
+          publish.payload.should eq payload
+          publish.packet_id.not_nil!.should eq packet_id
         end
 
         it "raises error if dup is set for QoS 0 messages" do
@@ -355,11 +353,12 @@ describe MQTT::Protocol::Packet do
           publish.to_io(io)
           mio.rewind
 
-          parsed_publish = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::Publish
+          publish = MQTT::Protocol::Packet.from_io(io)
+          publish = publish.should be_a MQTT::Protocol::Publish
 
-          parsed_publish.topic.should eq topic
-          parsed_publish.payload.should eq payload
-          parsed_publish.dup?.should eq false
+          publish.topic.should eq topic
+          publish.payload.should eq payload
+          publish.dup?.should eq false
         end
       end
 
@@ -404,8 +403,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           puback = MQTT::Protocol::Packet.from_io(mio)
-          puback.should be_a MQTT::Protocol::PubAck
-          puback = puback.as MQTT::Protocol::PubAck
+          puback = puback.should be_a MQTT::Protocol::PubAck
           puback.packet_id.should eq packet_id
         end
       end
@@ -418,8 +416,9 @@ describe MQTT::Protocol::Packet do
           puback.to_io(io)
           mio.rewind
 
-          parsed_puback = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::PubAck
-          parsed_puback.packet_id.should eq packet_id
+          puback = MQTT::Protocol::Packet.from_io(io)
+          puback = puback.should be_a MQTT::Protocol::PubAck
+          puback.packet_id.should eq packet_id
         end
       end
     end
@@ -436,8 +435,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           pubrec = MQTT::Protocol::Packet.from_io(mio)
-          pubrec.should be_a MQTT::Protocol::PubRec
-          pubrec = pubrec.as MQTT::Protocol::PubRec
+          pubrec = pubrec.should be_a MQTT::Protocol::PubRec
           pubrec.packet_id.should eq packet_id
         end
       end
@@ -451,8 +449,9 @@ describe MQTT::Protocol::Packet do
           pubrec.to_io(io)
           mio.rewind
 
-          parsed_pubrec = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::PubRec
-          parsed_pubrec.packet_id.should eq packet_id
+          pubrec = MQTT::Protocol::Packet.from_io(io)
+          pubrec = pubrec.should be_a MQTT::Protocol::PubRec
+          pubrec.packet_id.should eq packet_id
         end
       end
     end
@@ -469,8 +468,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           pubrel = MQTT::Protocol::Packet.from_io(mio)
-          pubrel.should be_a MQTT::Protocol::PubRel
-          pubrel = pubrel.as MQTT::Protocol::PubRel
+          pubrel = pubrel.should be_a MQTT::Protocol::PubRel
           pubrel.packet_id.should eq packet_id
         end
       end
@@ -483,8 +481,9 @@ describe MQTT::Protocol::Packet do
           pubrel.to_io(io)
           mio.rewind
 
-          parsed_pubrel = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::PubRel
-          parsed_pubrel.packet_id.should eq packet_id
+          pubrel = MQTT::Protocol::Packet.from_io(io)
+          pubrel = pubrel.should be_a MQTT::Protocol::PubRel
+          pubrel.packet_id.should eq packet_id
         end
       end
     end
@@ -501,8 +500,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           pubcomp = MQTT::Protocol::Packet.from_io(mio)
-          pubcomp.should be_a MQTT::Protocol::PubComp
-          pubcomp = pubcomp.as MQTT::Protocol::PubComp
+          pubcomp = pubcomp.should be_a MQTT::Protocol::PubComp
           pubcomp.packet_id.should eq packet_id
         end
       end
@@ -516,8 +514,9 @@ describe MQTT::Protocol::Packet do
           pubcomp.to_io(io)
           mio.rewind
 
-          parsed_pubcomp = MQTT::Protocol::Packet.from_io(io).as MQTT::Protocol::PubComp
-          parsed_pubcomp.packet_id.should eq packet_id
+          pubcomp = MQTT::Protocol::Packet.from_io(io)
+          pubcomp = pubcomp.should be_a MQTT::Protocol::PubComp
+          pubcomp.packet_id.should eq packet_id
         end
       end
     end
@@ -535,8 +534,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           subscribe = MQTT::Protocol::Packet.from_io(mio)
-          subscribe.should be_a MQTT::Protocol::Subscribe
-          subscribe = subscribe.as(MQTT::Protocol::Subscribe)
+          subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
           subscribe.packet_id.should eq 55u16
           subscribe.topic_filters.first.topic.should eq "MyTopicFilter"
           subscribe.topic_filters.first.qos.should eq 1u8
@@ -609,7 +607,8 @@ describe MQTT::Protocol::Packet do
             io.write_string(topic)
             io.write_byte(1u8)
             mio.rewind
-            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
 
@@ -640,7 +639,8 @@ describe MQTT::Protocol::Packet do
             io.write_string(topic)
             io.write_byte(1u8)
             mio.rewind
-            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
 
@@ -674,7 +674,8 @@ describe MQTT::Protocol::Packet do
             io.write_byte(1u8)
             mio.rewind
 
-            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
 
@@ -707,7 +708,8 @@ describe MQTT::Protocol::Packet do
             io.write_byte(1u8)
             mio.rewind
 
-            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
 
@@ -723,7 +725,8 @@ describe MQTT::Protocol::Packet do
             io.write_byte(1u8)
             mio.rewind
 
-            subscribe = MQTT::Protocol::Packet.from_io(mio).as(MQTT::Protocol::Subscribe)
+            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
 
@@ -758,9 +761,8 @@ describe MQTT::Protocol::Packet do
 
           mio.rewind
 
-          parsed_packet = MQTT::Protocol::Packet.from_io(io)
-          parsed_packet.should be_a MQTT::Protocol::Subscribe
-          subscribe_packet = parsed_packet.as(MQTT::Protocol::Subscribe)
+          subscribe_packet = MQTT::Protocol::Packet.from_io(io)
+          subscribe_packet = subscribe_packet.should be_a MQTT::Protocol::Subscribe
           subscribe_packet.packet_id.should eq 65u16
           subscribe_packet.topic_filters.each_with_index do |topic_filter, index|
             topic_filter.should eq topic_filters[index]
@@ -793,14 +795,13 @@ describe MQTT::Protocol::Packet do
           io.write_byte(128u8)
           mio.rewind
 
-          sub_ack = MQTT::Protocol::Packet.from_io(mio)
-          sub_ack.should be_a MQTT::Protocol::SubAck
-          sub_ack = sub_ack.as(MQTT::Protocol::SubAck)
-          sub_ack.packet_id.should eq 50u16
-          sub_ack.return_codes[0].should eq MQTT::Protocol::SubAck::ReturnCode::QoS0
-          sub_ack.return_codes[1].should eq MQTT::Protocol::SubAck::ReturnCode::QoS1
-          sub_ack.return_codes[2].should eq MQTT::Protocol::SubAck::ReturnCode::QoS2
-          sub_ack.return_codes[3].should eq MQTT::Protocol::SubAck::ReturnCode::Failure
+          suback = MQTT::Protocol::Packet.from_io(mio)
+          suback = suback.should be_a MQTT::Protocol::SubAck
+          suback.packet_id.should eq 50u16
+          suback.return_codes[0].should eq MQTT::Protocol::SubAck::ReturnCode::QoS0
+          suback.return_codes[1].should eq MQTT::Protocol::SubAck::ReturnCode::QoS1
+          suback.return_codes[2].should eq MQTT::Protocol::SubAck::ReturnCode::QoS2
+          suback.return_codes[3].should eq MQTT::Protocol::SubAck::ReturnCode::Failure
         end
 
         it "is has invalid return Code" do
@@ -853,11 +854,10 @@ describe MQTT::Protocol::Packet do
 
           mio.rewind
 
-          parsed_packet = MQTT::Protocol::Packet.from_io(io)
-          parsed_packet.should be_a MQTT::Protocol::SubAck
-          sub_ack_packet = parsed_packet.as(MQTT::Protocol::SubAck)
-          sub_ack_packet.packet_id.should eq 65u16
-          sub_ack_packet.return_codes.each_with_index do |return_code, index|
+          suback = MQTT::Protocol::Packet.from_io(io)
+          suback = suback.should be_a MQTT::Protocol::SubAck
+          suback.packet_id.should eq 65u16
+          suback.return_codes.each_with_index do |return_code, index|
             return_code.should eq return_codes[index]
           end
         end
@@ -876,8 +876,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           unsubscribe = MQTT::Protocol::Packet.from_io(mio)
-          unsubscribe.should be_a MQTT::Protocol::Unsubscribe
-          unsubscribe = unsubscribe.as(MQTT::Protocol::Unsubscribe)
+          unsubscribe = unsubscribe.should be_a MQTT::Protocol::Unsubscribe
           unsubscribe.packet_id.should eq 50u16
           unsubscribe.topics.first.should eq "MyTopic"
         end
@@ -899,8 +898,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           unsubscribe = MQTT::Protocol::Packet.from_io(mio)
-          unsubscribe.should be_a MQTT::Protocol::Unsubscribe
-          unsubscribe = unsubscribe.as(MQTT::Protocol::Unsubscribe)
+          unsubscribe = unsubscribe.should be_a MQTT::Protocol::Unsubscribe
           unsubscribe.packet_id.should eq 50u16
           unsubscribe.topics.size.should eq 4
           unsubscribe.topics.each_with_index do |topic, index|
@@ -941,11 +939,10 @@ describe MQTT::Protocol::Packet do
 
           mio.rewind
 
-          parsed_packet = MQTT::Protocol::Packet.from_io(io)
-          parsed_packet.should be_a MQTT::Protocol::Unsubscribe
-          unsubscribe_packet = parsed_packet.as(MQTT::Protocol::Unsubscribe)
-          unsubscribe_packet.packet_id.should eq 65u16
-          unsubscribe_packet.topics.each_with_index do |topic, index|
+          unsubscribe = MQTT::Protocol::Packet.from_io(io)
+          unsubscribe = unsubscribe.should be_a MQTT::Protocol::Unsubscribe
+          unsubscribe.packet_id.should eq 65u16
+          unsubscribe.topics.each_with_index do |topic, index|
             topic.should eq topics[index]
           end
         end
@@ -962,9 +959,9 @@ describe MQTT::Protocol::Packet do
           io.write_int(50u16)
           mio.rewind
 
-          unsub_ack = MQTT::Protocol::Packet.from_io(mio)
-          unsub_ack.should be_a MQTT::Protocol::UnsubAck
-          unsub_ack.as(MQTT::Protocol::UnsubAck).packet_id.should eq 50u16
+          unsuback = MQTT::Protocol::Packet.from_io(mio)
+          unsuback = unsuback.should be_a MQTT::Protocol::UnsubAck
+          unsuback.packet_id.should eq 50u16
         end
 
         it "raises if flags are set" do
@@ -995,14 +992,14 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.new(mio)
 
-          unsub_ack = MQTT::Protocol::UnsubAck.new(65534u16)
-          unsub_ack.to_io(io)
+          unsuback = MQTT::Protocol::UnsubAck.new(65534u16)
+          unsuback.to_io(io)
 
           mio.rewind
 
-          parsed_packet = MQTT::Protocol::Packet.from_io(io)
-          parsed_packet.should be_a MQTT::Protocol::UnsubAck
-          parsed_packet.as(MQTT::Protocol::UnsubAck).packet_id.should eq 65534u16
+          unsuback = MQTT::Protocol::Packet.from_io(io)
+          unsuback = unsuback.should be_a MQTT::Protocol::UnsubAck
+          unsuback.packet_id.should eq 65534u16
         end
       end
     end
@@ -1016,8 +1013,8 @@ describe MQTT::Protocol::Packet do
           io.write_remaining_length 0 # always 0
           mio.rewind
 
-          ping_req = MQTT::Protocol::Packet.from_io(mio)
-          ping_req.should be_a MQTT::Protocol::PingReq
+          pingreq = MQTT::Protocol::Packet.from_io(mio)
+          pingreq.should be_a MQTT::Protocol::PingReq
         end
         it "raises if flags are set" do
           mio = IO::Memory.new
@@ -1047,13 +1044,13 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.new(mio)
 
-          ping_req = MQTT::Protocol::PingReq.new
-          ping_req.to_io(io)
+          pingreq = MQTT::Protocol::PingReq.new
+          pingreq.to_io(io)
 
           mio.rewind
 
-          parsed_packet = MQTT::Protocol::Packet.from_io(io)
-          parsed_packet.should be_a MQTT::Protocol::PingReq
+          pingreq = MQTT::Protocol::Packet.from_io(io)
+          pingreq.should be_a MQTT::Protocol::PingReq
         end
       end
     end
@@ -1098,13 +1095,13 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.new(mio)
 
-          ping_req = MQTT::Protocol::PingResp.new
-          ping_req.to_io(io)
+          pingresp = MQTT::Protocol::PingResp.new
+          pingresp.to_io(io)
 
           mio.rewind
 
-          parsed_packet = MQTT::Protocol::Packet.from_io(io)
-          parsed_packet.should be_a MQTT::Protocol::PingResp
+          pingresp = MQTT::Protocol::Packet.from_io(io)
+          pingresp.should be_a MQTT::Protocol::PingResp
         end
       end
     end
@@ -1155,8 +1152,8 @@ describe MQTT::Protocol::Packet do
 
           mio.rewind
 
-          parsed_packet = MQTT::Protocol::Packet.from_io(io)
-          parsed_packet.should be_a MQTT::Protocol::Disconnect
+          disconnect = MQTT::Protocol::Packet.from_io(io)
+          disconnect.should be_a MQTT::Protocol::Disconnect
         end
       end
     end

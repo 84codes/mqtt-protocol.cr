@@ -9,7 +9,7 @@ macro decode_assert(condition, err, *args)
     ({{condition}} || raise Error::PacketDecode.new {{err}})
   {% else %}
     # here we just assume it's a class name
-    ({{condition}} || raise {{err}}.new({{*args}}))
+    ({{condition}} || raise {{err}}.new({{args.splat}}))
   {% end %}
 end
 

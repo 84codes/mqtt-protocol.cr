@@ -1,6 +1,28 @@
 require "./spec_helper"
 
 describe MQTT::Protocol::IO do
+  it "can read packet" do
+    mio = IO::Memory.new
+    # Write a raw PingReq
+    mio.write_byte(12u8 << 4)
+    mio.write_byte(0u8)
+    mio.rewind
+
+    packet = MQTT::Protocol::IO.new(mio).read_packet
+
+    packet.should be_a MQTT::Protocol::PingReq
+  end
+
+  it "can write packet" do
+    mio = IO::Memory.new
+
+    pingreq = MQTT::Protocol::PingReq.new
+    MQTT::Protocol::IO.new(mio).write_packet(pingreq)
+    mio.rewind
+
+    mio.to_slice.should eq Bytes[12u8 << 4, 0u8]
+  end
+
   it "can write int" do
     mio = IO::Memory.new
     io = MQTT::Protocol::IO.new(mio)

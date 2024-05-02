@@ -1,3 +1,5 @@
+require "./packets"
+
 module MQTT
   module Protocol
     struct IO
@@ -7,6 +9,18 @@ module MQTT
       end
 
       forward_missing_to @io
+
+      def read_packet : Packet
+        Packet.from_io(self)
+      end
+
+      def write(packet : Packet)
+        write_packet(packet)
+      end
+
+      def write_packet(packet : Packet)
+        packet.to_io(self)
+      end
 
       def read_byte
         @io.read_byte || raise ::IO::EOFError.new

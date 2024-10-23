@@ -96,7 +96,7 @@ describe MQTT::Protocol::Payload do
         io.rewind
 
         obj = MQTT::Protocol::IOPayload.new(io, 3)
-        data = obj.to_slice
+        obj.to_slice
 
         obj.@data.should be_nil
       end
@@ -105,7 +105,7 @@ describe MQTT::Protocol::Payload do
         io = NonPositionIO.new("foo".to_slice)
 
         obj = MQTT::Protocol::IOPayload.new(io, 3)
-        data = obj.to_slice
+        obj.to_slice
 
         obj.@data.should eq "foo".to_slice
       end

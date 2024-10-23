@@ -47,8 +47,6 @@ module MQTT
     end
 
     struct IOPayload < Payload
-      alias IOWithPosition = ::IO::Memory | ::IO::FileDescriptor
-
       getter bytesize : Int32
 
       @data : Bytes? = nil
@@ -76,8 +74,8 @@ module MQTT
         if data = @data
           io.write data
         else
-          # else try to copy
-          if @io.io.is_a?(IOWithPosition)
+          # try to copy if it's possible to "rewind"
+          if @io.io.is_a?(::IO::Memory | ::IO::FileDescriptor)
             pos = @io.pos
             copied = ::IO.copy(@io, io, bytesize)
             raise "Failed to copy payload" if copied != bytesize

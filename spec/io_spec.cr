@@ -84,7 +84,7 @@ describe MQTT::Protocol::IO do
     mio = IO::Memory.new
     io = MQTT::Protocol::IO.new(mio)
 
-    io.write_bytes_raw bytes
+    io.write bytes
     mio.rewind
 
     res = Bytes.new(3)

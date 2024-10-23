@@ -1,3 +1,4 @@
+require "../payload"
 require "./packets"
 
 module MQTT
@@ -8,12 +9,25 @@ module MQTT
       getter topic, payload, qos, packet_id, remaining_length
       getter? dup, retain
 
-      def initialize(@topic : String, @payload : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
+      def initialize(@topic : String, @payload : Payload, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
         raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
         raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
         raise ArgumentError.new("Topic must be between atleast 1 char long") if @topic.size < 1
         raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
         raise ArgumentError.new("DUP must be 0 for QoS 0 messages") if dup? && qos.zero?
+        @remaining_length = 0
+        @remaining_length += (2 + topic.bytesize) + payload.bytesize
+        @remaining_length += 2 if qos.positive? # packet_id
+      end
+
+      @[Deprecated("Use Payload instead of Bytes for @payload")]
+      def initialize(@topic : String, payload : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
+        raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
+        raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
+        raise ArgumentError.new("Topic must be between atleast 1 char long") if @topic.size < 1
+        raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
+        raise ArgumentError.new("DUP must be 0 for QoS 0 messages") if dup? && qos.zero?
+        @payload = BytesPayload.new(payload)
         @remaining_length = 0
         @remaining_length += (2 + topic.bytesize) + payload.bytesize
         @remaining_length += 2 if qos.positive? # packet_id
@@ -32,7 +46,7 @@ module MQTT
         else
           decode_assert dup == false, "DUP must be 0 for QoS 0 messages"
         end
-        payload = io.read_bytes(remaining_length.to_u16)
+        payload = IOPayload.new(io, remaining_length.to_i32)
         self.new(topic, payload, packet_id, dup, qos, retain)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
@@ -47,7 +61,7 @@ module MQTT
         io.write_remaining_length remaining_length
         io.write_string topic
         io.write_int packet_id.not_nil! if qos.positive?
-        io.write_bytes_raw(payload)
+        io.write_bytes payload
       end
     end
   end

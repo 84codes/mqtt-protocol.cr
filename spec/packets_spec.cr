@@ -254,13 +254,13 @@ describe MQTT::Protocol::Packet do
           io = MQTT::Protocol::IO.new(mio)
 
           topic = "a/b/c"
-          payload = "foobar and barfoo".to_slice
+          payload = MQTT::Protocol::Payload.new("foobar and barfoo".to_slice)
           remaining_length = topic.bytesize + payload.size + 2 # 2 = sizeof topic len
 
           io.write_byte 0b00110000u8
           io.write_remaining_length remaining_length
           io.write_string topic
-          io.write_bytes_raw payload
+          io.write_bytes payload
 
           mio.rewind
 
@@ -282,7 +282,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b00111000u8
           io.write_remaining_length remaining_length
           io.write_string topic
-          io.write_bytes_raw payload
+          io.write payload
 
           mio.rewind
 
@@ -302,7 +302,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b00111000u8
           io.write_remaining_length remaining_length
           io.write_string topic
-          io.write_bytes_raw payload
+          io.write payload
 
           mio.rewind
 
@@ -318,7 +318,7 @@ describe MQTT::Protocol::Packet do
           io = MQTT::Protocol::IO.new(mio)
 
           topic = "a/b/c"
-          payload = "foobar and barfoo".to_slice
+          payload = MQTT::Protocol::Payload.new("foobar and barfoo".to_slice)
           packet_id = 100u16
           publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
           publish.to_io(io)
@@ -335,7 +335,7 @@ describe MQTT::Protocol::Packet do
 
         it "raises error if dup is set for QoS 0 messages" do
           topic = "a/b/c"
-          payload = "foobar and barfoo".to_slice
+          payload = MQTT::Protocol::Payload.new("foobar and barfoo".to_slice)
           packet_id = 100u16
           expect_raises(ArgumentError) do
             MQTT::Protocol::Publish.new(topic, payload, packet_id, true, 0, false)
@@ -347,7 +347,7 @@ describe MQTT::Protocol::Packet do
           io = MQTT::Protocol::IO.new(mio)
 
           topic = "a/b/c"
-          payload = "foobar and barfoo".to_slice
+          payload = MQTT::Protocol::Payload.new("foobar and barfoo".to_slice)
           packet_id = 100u16
           publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 0, false)
           publish.to_io(io)
@@ -365,7 +365,7 @@ describe MQTT::Protocol::Packet do
       describe "#initialize" do
         it "raises an error if QoS is 3" do
           topic = "a/b/c"
-          payload = "foobar and barfoo".to_slice
+          payload = MQTT::Protocol::Payload.new("foobar and barfoo".to_slice)
           packet_id = 100u16
           expect_raises(ArgumentError) do
             MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 3, false)
@@ -375,7 +375,7 @@ describe MQTT::Protocol::Packet do
         describe "with wildcard in topic" do
           it "should raise ArguementError" do
             topic = "a/#"
-            payload = "foobar and barfoo".to_slice
+            payload = MQTT::Protocol::Payload.new("foobar and barfoo".to_slice)
             packet_id = 100u16
 
             expect_raises(ArgumentError) do

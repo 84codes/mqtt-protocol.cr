@@ -68,6 +68,7 @@ module MQTT
         @io.write bytes
       end
 
+      @[Deprecated("Use write_bytes instead")]
       def write_bytes_raw(bytes : Bytes)
         @io.write bytes
       end

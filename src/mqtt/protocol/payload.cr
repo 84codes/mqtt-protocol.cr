@@ -47,6 +47,8 @@ module MQTT
     end
 
     struct IOPayload < Payload
+      alias IOWithPosition = ::IO::Memory | ::IO::FileDescriptor
+
       getter bytesize : Int32
 
       @data : Bytes? = nil
@@ -62,7 +64,7 @@ module MQTT
         if peeked = @io.peek.try &.[0, bytesize]?
           return peeked
         end
-        return @data || begin
+        @data ||= begin
           data = Bytes.new(bytesize)
           @io.read(data)
           data
@@ -70,11 +72,20 @@ module MQTT
       end
 
       def to_io(io, format : ::IO::ByteFormat = ::IO::ByteFormat::SystemEndian)
+        # Use data that has already been copied to memory
         if data = @data
           io.write data
         else
-          copied = ::IO.copy(@io, io, bytesize)
-          raise "Failed to copy payload" if copied != bytesize
+          # else try to copy
+          if @io.io.is_a?(IOWithPosition)
+            pos = @io.pos
+            copied = ::IO.copy(@io, io, bytesize)
+            raise "Failed to copy payload" if copied != bytesize
+            @io.pos = pos
+          else
+            # copy to memory and write
+            io.write to_slice
+          end
         end
       end
     end

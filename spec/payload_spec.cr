@@ -74,4 +74,29 @@ describe MQTT::Protocol::Payload do
       (one == two).should be_false
     end
   end
+
+  describe "IOPayload" do
+    it "#to_slice should peek if possible" do
+      io = IO::Memory.new("foo".to_slice)
+      io.rewind
+
+      obj = MQTT::Protocol::IOPayload.new(io, 3)
+      data = obj.to_slice
+
+      obj.@data.should be_nil
+    end
+
+    it "#to_io should not affect position" do
+      io = IO::Memory.new("foo".to_slice)
+      io.rewind
+
+      obj = MQTT::Protocol::IOPayload.new(io, 3)
+
+      dst = IO::Memory.new
+      obj.to_io(dst)
+
+      obj.@data.should be_nil
+      obj.@io.pos.should eq(0)
+    end
+  end
 end

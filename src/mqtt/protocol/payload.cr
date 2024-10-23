@@ -21,7 +21,7 @@ module MQTT
 
       abstract def bytesize : Int32
       abstract def to_slice : Bytes
-      abstract def to_io(io, format : ::IO::ByteFormat = IO::ByteFormat::SystemEndian)
+      abstract def to_io(io, format : ::IO::ByteFormat = ::IO::ByteFormat::SystemEndian)
 
       def ==(other)
         return false unless other.is_a?(Payload)
@@ -41,7 +41,7 @@ module MQTT
         @bytes
       end
 
-      def to_io(io, format : ::IO::ByteFormat = IO::ByteFormat::SystemEndian)
+      def to_io(io, format : ::IO::ByteFormat = ::IO::ByteFormat::SystemEndian)
         io.write @bytes
       end
     end
@@ -69,7 +69,7 @@ module MQTT
         end
       end
 
-      def to_io(io, format : ::IO::ByteFormat = IO::ByteFormat::SystemEndian)
+      def to_io(io, format : ::IO::ByteFormat = ::IO::ByteFormat::SystemEndian)
         if data = @data
           io.write data
         else

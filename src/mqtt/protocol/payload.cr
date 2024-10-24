@@ -7,6 +7,10 @@ module MQTT
         BytesPayload.new(bytes)
       end
 
+      def self.new(str : String)
+        BytesPayload.new(str.to_slice)
+      end
+
       def self.new(io : ::IO, bytesize : Int32)
         IOPayload.new(MQTT::Protocol::IO.new(io), bytesize)
       end

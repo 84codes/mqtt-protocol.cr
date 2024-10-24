@@ -74,14 +74,14 @@ module MQTT
         if data = @data
           io.write data
         else
-          # try to copy if it's possible to "rewind"
-          if @io.io.is_a?(::IO::Memory | ::IO::FileDescriptor)
+          if io_mem = @io.io.as?(::IO::Memory)
+            io.write io_mem.to_slice
+          elsif @io.io.is_a?(::IO::FileDescriptor)
             pos = @io.pos
             copied = ::IO.copy(@io, io, bytesize)
             raise "Failed to copy payload" if copied != bytesize
             @io.pos = pos
           else
-            # copy to memory and write
             io.write to_slice
           end
         end

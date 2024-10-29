@@ -9,6 +9,10 @@ module MQTT
       getter topic, payload, qos, packet_id, remaining_length
       getter? dup, retain
 
+      def initialize(pub : Publish, topic = pub.topic, qos = pub.qos, payload = pub.payload, packet_id = pub.packet_id, dup = pub.dup?, retain = pub.retain?)
+        initialize(topic, payload, packet_id, dup, qos, retain)
+      end
+
       def initialize(@topic : String, @payload : Payload, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
         raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
         raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)

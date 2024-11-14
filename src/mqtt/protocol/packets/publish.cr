@@ -9,8 +9,12 @@ module MQTT
       getter topic, payload, qos, packet_id, remaining_length
       getter? dup, retain
 
-      def initialize(pub : Publish, topic = pub.topic, qos = pub.qos, payload = pub.payload, packet_id = pub.packet_id, dup = pub.dup?, retain = pub.retain?)
-        initialize(topic, payload, packet_id, dup, qos, retain)
+      def self.new(topic : String, payload : Bytes, packet_id : UInt16?, dup : Bool, qos : UInt8, retain : Bool)
+        new(topic, BytesPayload.new(payload), packet_id, dup, qos, retain)
+      end
+
+      def self.new(pub : Publish, topic = pub.topic, qos = pub.qos, payload = pub.payload, packet_id = pub.packet_id, dup = pub.dup?, retain = pub.retain?)
+        new(topic, payload, packet_id, dup, qos, retain)
       end
 
       def initialize(@topic : String, @payload : Payload, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
@@ -19,19 +23,6 @@ module MQTT
         raise ArgumentError.new("Topic must be between atleast 1 char long") if @topic.size < 1
         raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
         raise ArgumentError.new("DUP must be 0 for QoS 0 messages") if dup? && qos.zero?
-        @remaining_length = 0
-        @remaining_length += (2 + topic.bytesize) + payload.bytesize
-        @remaining_length += 2 if qos.positive? # packet_id
-      end
-
-      @[Deprecated("Use Payload instead of Bytes for @payload")]
-      def initialize(@topic : String, payload : Bytes, @packet_id : UInt16?, @dup : Bool, @qos : UInt8, @retain : Bool)
-        raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
-        raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
-        raise ArgumentError.new("Topic must be between atleast 1 char long") if @topic.size < 1
-        raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
-        raise ArgumentError.new("DUP must be 0 for QoS 0 messages") if dup? && qos.zero?
-        @payload = BytesPayload.new(payload)
         @remaining_length = 0
         @remaining_length += (2 + topic.bytesize) + payload.bytesize
         @remaining_length += 2 if qos.positive? # packet_id

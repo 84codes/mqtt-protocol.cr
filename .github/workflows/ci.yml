@@ -4,7 +4,7 @@ on: [push]
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: crystal-ameba/github-action@v0.2.12
@@ -15,7 +15,7 @@ jobs:
 
   spec:
     name: Spec
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: crystal-lang/install-crystal@v1

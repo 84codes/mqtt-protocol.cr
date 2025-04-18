@@ -11,11 +11,12 @@ module MQTT
       @username : String?
       @password : Bytes?
       @will : Will?
+      @version : UInt8
 
-      getter client_id, keepalive, username, password, will
+      getter client_id, keepalive, username, password, will, version
       getter? clean_session
 
-      def initialize(@client_id, @clean_session, @keepalive, @username, @password, @will)
+      def initialize(@client_id, @clean_session, @keepalive, @username, @password, @will, @version = 0x04)
         # Remaining length is at least 10:
         # protocol name (str) + protocol version (byte) + connect flags (byte) + keep alive (int)
         @remaining_length = 10
@@ -41,13 +42,18 @@ module MQTT
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
 
         protocol_len = io.read_int
-        decode_assert protocol_len == 4, "invalid protocol length: #{protocol_len}"
-
         protocol = io.read_string(protocol_len)
-        decode_assert protocol == "MQTT", "invalid protocol: #{protocol.inspect}"
-
         version = io.read_byte
-        decode_assert version == 0x04, Error::UnacceptableProtocolVersion
+
+        # MQIsdp is for MQTT 3.1, MQTT is for MQTT 3.1.1
+        case protocol
+        when "MQTT"
+          decode_assert version == 0x04, Error::UnacceptableProtocolVersion
+        when "MQIsdp"
+          decode_assert version == 0x03, Error::UnacceptableProtocolVersion
+        else
+          raise Error::UnacceptableProtocolVersion.new("invalid protocol: #{protocol.inspect}")
+        end
 
         connect_flags = io.read_byte
         decode_assert connect_flags.bit(0) == 0, "reserved connect flag set"
@@ -80,7 +86,7 @@ module MQTT
         username = io.read_string if has_username
         password = io.read_bytes if has_password
 
-        self.new(client_id, clean_session, keepalive, username, password, will)
+        self.new(client_id, clean_session, keepalive, username, password, will, version)
       end
 
       def to_io(io)
@@ -101,8 +107,13 @@ module MQTT
         connect_flags |= 0b0000_0010u8 if clean_session?
         io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length
-        io.write_string "MQTT"
-        io.write_byte 4u8 # "protocol version"
+        case version
+        when 3 then io.write_string "MQIsdp"
+        when 4 then io.write_string "MQTT"
+        else
+          raise Error::UnacceptableProtocolVersion.new("invalid protocol version: #{version}")
+        end
+        io.write_byte version # "protocol version"
         io.write_byte connect_flags
         io.write_int keepalive
         io.write_string client_id if client_id

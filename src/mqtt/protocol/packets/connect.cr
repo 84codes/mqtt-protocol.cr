@@ -43,19 +43,17 @@ module MQTT
 
         protocol_len = io.read_int
         protocol = io.read_string(protocol_len)
+        version = io.read_byte
 
         # MQIsdp is for MQTT 3.1, MQTT is for MQTT 3.1.1
-        if protocol == "MQTT"
-          decode_assert protocol_len == 4, "invalid protocol length for MQTT 3.1.1: #{protocol_len}"
-        elsif protocol == "MQIsdp"
-          decode_assert protocol_len == 6, "invalid protocol length for MQTT 3.1: #{protocol_len}"
+        case protocol
+        when "MQTT"
+          decode_assert version == 0x04, Error::UnacceptableProtocolVersion
+        when "MQIsdp"
+          decode_assert version == 0x03, Error::UnacceptableProtocolVersion
         else
-          decode_assert false, "invalid protocol: #{protocol.inspect}"
+          raise Error::UnacceptableProtocolVersion.new("invalid protocol: #{protocol.inspect}")
         end
-
-        version = io.read_byte
-        decode_assert version == 0x04 || version == 0x03, Error::UnacceptableProtocolVersion
-        # @version will be set when we create a new instance at the end of this method
 
         connect_flags = io.read_byte
         decode_assert connect_flags.bit(0) == 0, "reserved connect flag set"

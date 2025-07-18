@@ -32,7 +32,7 @@ module MQTT
         else
           decode_assert dup == false, "DUP must be 0 for QoS 0 messages"
         end
-        payload = io.read_bytes(remaining_length.to_u16)
+        payload = io.read_bytes(remaining_length)
         self.new(topic, payload, packet_id, dup, qos, retain)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)

@@ -11,14 +11,22 @@ module MQTT
       @username : String?
       @password : Bytes?
       @will : Will?
+      @version : UInt8
 
-      getter client_id, keepalive, username, password, will
+      getter client_id, keepalive, username, password, will, version
       getter? clean_session
 
-      def initialize(@client_id, @clean_session, @keepalive, @username, @password, @will)
-        # Remaining length is at least 10:
+      def initialize(@client_id, @clean_session, @keepalive, @username, @password, @will, @version = MQTT::Protocol::MQTT_3_1_1_VERSION)
+        # Remaining length calculation:
         # protocol name (str) + protocol version (byte) + connect flags (byte) + keep alive (int)
-        @remaining_length = 10
+        @remaining_length = case @version
+                            when MQTT::Protocol::MQTT_3_1_VERSION
+                              12_u32 # MQIsdp (6 bytes) + 2 bytes for length + version + flags + keepalive
+                            when MQTT::Protocol::MQTT_3_1_1_VERSION
+                              10_u32 # MQTT (4 bytes) + 2 bytes for length + version + flags + keepalive
+                            else
+                              raise Error::UnacceptableProtocolVersion.new
+                            end
 
         # ClientID
         @remaining_length += sizeof(UInt16)
@@ -41,13 +49,19 @@ module MQTT
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
 
         protocol_len = io.read_int
-        decode_assert protocol_len == 4, "invalid protocol length: #{protocol_len}"
-
         protocol = io.read_string(protocol_len)
-        decode_assert protocol == "MQTT", "invalid protocol: #{protocol.inspect}"
-
         version = io.read_byte
-        decode_assert version == 0x04, Error::UnacceptableProtocolVersion
+
+        case version
+        when MQTT::Protocol::MQTT_3_1_VERSION
+          decode_assert protocol_len == 6, "invalid protocol length for MQTT 3.1: #{protocol_len}"
+          decode_assert protocol == MQTT::Protocol::MQTT_3_1_PROTOCOL_NAME, "invalid protocol for MQTT 3.1: #{protocol.inspect}"
+        when MQTT::Protocol::MQTT_3_1_1_VERSION
+          decode_assert protocol_len == 4, "invalid protocol length for MQTT 3.1.1: #{protocol_len}"
+          decode_assert protocol == MQTT::Protocol::MQTT_3_1_1_PROTOCOL_NAME, "invalid protocol for MQTT 3.1.1: #{protocol.inspect}"
+        else
+          raise Error::UnacceptableProtocolVersion.new
+        end
 
         connect_flags = io.read_byte
         decode_assert connect_flags.bit(0) == 0, "reserved connect flag set"
@@ -73,14 +87,19 @@ module MQTT
         client_id = io.read_string(client_id_len)
 
         if client_id.to_s.empty?
-          decode_assert clean_session == true, Error::IdentifierRejected
+          case version
+          when MQTT::Protocol::MQTT_3_1_VERSION
+            raise Error::IdentifierRejected.new
+          when MQTT::Protocol::MQTT_3_1_1_VERSION
+            decode_assert clean_session == true, Error::IdentifierRejected
+          end
         end
 
         will = has_will ? Will.from_io(io, will_qos, will_retain) : nil
         username = io.read_string if has_username
         password = io.read_bytes if has_password
 
-        self.new(client_id, clean_session, keepalive, username, password, will)
+        self.new(client_id, clean_session, keepalive, username, password, will, version)
       end
 
       def to_io(io)
@@ -101,8 +120,17 @@ module MQTT
         connect_flags |= 0b0000_0010u8 if clean_session?
         io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length
-        io.write_string "MQTT"
-        io.write_byte 4u8 # "protocol version"
+
+        case @version
+        when MQTT::Protocol::MQTT_3_1_VERSION
+          io.write_string MQTT::Protocol::MQTT_3_1_PROTOCOL_NAME
+          io.write_byte MQTT::Protocol::MQTT_3_1_VERSION
+        when MQTT::Protocol::MQTT_3_1_1_VERSION
+          io.write_string MQTT::Protocol::MQTT_3_1_1_PROTOCOL_NAME
+          io.write_byte MQTT::Protocol::MQTT_3_1_1_VERSION
+        else
+          raise Error::UnacceptableProtocolVersion.new
+        end
         io.write_byte connect_flags
         io.write_int keepalive
         io.write_string client_id if client_id

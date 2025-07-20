@@ -35,9 +35,6 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length 10u8
           io.write_string "FOOO"
-          io.write_byte 4u8  # protocol = 4 (3.1.1)
-          io.write_byte 0u8  # connect flags
-          io.write_int 60u16 # keepalive
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid protocol/) do
@@ -51,9 +48,6 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length 10u8
           io.write_string "to long"
-          io.write_byte 4u8  # protocol = 4 (3.1.1)
-          io.write_byte 0u8  # connect flags
-          io.write_int 60u16 # keepalive
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid protocol length/) do
@@ -145,82 +139,6 @@ describe MQTT::Protocol::Packet do
             MQTT::Protocol::Packet.from_io(mio)
           end
         end
-
-        describe "MQTT 3.1 support" do
-          it "accepts MQTT 3.1 protocol" do
-            client_id = "test-client"
-            remaining_length = client_id.bytesize + 12 # 12 for MQTT 3.1 header
-
-            mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
-            io.write_byte 0b00010000u8 # connect
-            io.write_remaining_length remaining_length.to_u8
-            io.write_string "MQIsdp"
-            io.write_byte 3u8          # protocol = 3 (3.1)
-            io.write_byte 0b00000010u8 # Connect flags (clean_session = true)
-            io.write_int 60u16         # keepalive = 60
-            io.write_string client_id
-            mio.rewind
-
-            connect = MQTT::Protocol::Packet.from_io(mio)
-            connect = connect.should be_a MQTT::Protocol::Connect
-            connect.client_id.should eq client_id
-            connect.version.should eq MQTT::Protocol::MQTT_3_1_VERSION
-            connect.clean_session?.should be_true
-          end
-
-          it "rejects empty client_id in MQTT 3.1" do
-            remaining_length = 12 # 12 for MQTT 3.1 header
-
-            mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
-            io.write_byte 0b00010000u8 # connect
-            io.write_remaining_length remaining_length.to_u8
-            io.write_string "MQIsdp"
-            io.write_byte 3u8          # protocol = 3 (3.1)
-            io.write_byte 0b00000010u8 # Connect flags (clean_session = true)
-            io.write_int 60u16         # keepalive = 60
-            io.write_string ""
-            mio.rewind
-
-            expect_raises(MQTT::Protocol::Error::IdentifierRejected) do
-              MQTT::Protocol::Packet.from_io(mio)
-            end
-          end
-
-          it "validates protocol name for MQTT 3.1" do
-            mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
-            io.write_byte 0b00010000u8 # connect
-            io.write_remaining_length 12u8
-            io.write_string "WRONGP"
-            io.write_byte 3u8  # protocol = 3 (3.1)
-            io.write_byte 0u8  # connect flags
-            io.write_int 60u16 # keepalive
-            io.write_string "" # empty client id
-            mio.rewind
-
-            expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid protocol for MQTT 3.1/) do
-              MQTT::Protocol::Packet.from_io(mio)
-            end
-          end
-
-          it "validates protocol length for MQTT 3.1" do
-            mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
-            io.write_byte 0b00010000u8 # connect
-            io.write_remaining_length 10u8
-            io.write_string "MQTT"
-            io.write_byte 3u8  # protocol = 3 (3.1)
-            io.write_byte 0u8  # connect flags
-            io.write_int 60u16 # keepalive
-            mio.rewind
-
-            expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid protocol length for MQTT 3.1/) do
-              MQTT::Protocol::Packet.from_io(mio)
-            end
-          end
-        end
       end
 
       describe "#to_io" do
@@ -252,38 +170,6 @@ describe MQTT::Protocol::Packet do
           connect.username.should eq username
           connect.password.should eq password
           connect.will.not_nil!.topic.should eq wtopic
-        end
-
-        it "can write MQTT 3.1 packets" do
-          mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
-
-          client_id = "client-foo"
-          clean_session = true
-          keepalive = 60u16
-          username = "aaaaaaaa"
-          password = "bbbbbbbb".to_slice
-
-          connect = MQTT::Protocol::Connect.new(
-            client_id: client_id,
-            clean_session: clean_session,
-            keepalive: keepalive,
-            username: username,
-            password: password,
-            will: nil,
-            version: MQTT::Protocol::MQTT_3_1_VERSION
-          )
-
-          connect.to_io(io)
-          mio.rewind
-
-          connect = MQTT::Protocol::Packet.from_io(io)
-          connect = connect.should be_a MQTT::Protocol::Connect
-          connect.client_id.should eq client_id
-          connect.version.should eq MQTT::Protocol::MQTT_3_1_VERSION
-          connect.username.should eq username
-          connect.password.should eq password
-          connect.clean_session?.should be_true
         end
       end
     end

@@ -38,7 +38,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 4u8  # protocol = 4 (3.1.1)
           io.write_byte 0u8  # connect flags
           io.write_int 60u16 # keepalive
-          io.write_string ""  # empty client_id
+          io.write_string "" # empty client_id
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::UnacceptableProtocolVersion, /invalid protocol/) do
@@ -55,7 +55,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte 4u8  # protocol = 4 (3.1.1)
           io.write_byte 0u8  # connect flags
           io.write_int 60u16 # keepalive
-          io.write_string ""  # empty client_id
+          io.write_string "" # empty client_id
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::UnacceptableProtocolVersion, /invalid protocol/) do

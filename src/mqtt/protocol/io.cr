@@ -1,11 +1,19 @@
 require "./packets"
 
 module MQTT
+  MAX_REMAINING_LENGTH = (128 * 128 * 128).to_u32
+
   module Protocol
     struct IO
       getter io
 
-      def initialize(@io : ::IO, @byte_format = ::IO::ByteFormat::NetworkEndian)
+      def self.new(io : ::IO, max_packet_size : UInt32? = nil,
+                   byte_format = ::IO::ByteFormat::NetworkEndian)
+        new(io, max_packet_size || MAX_REMAINING_LENGTH, byte_format)
+      end
+
+      protected def initialize(@io : ::IO, @max_packet_size : UInt32,
+                               @byte_format : ::IO::ByteFormat)
       end
 
       forward_missing_to @io
@@ -28,6 +36,7 @@ module MQTT
 
       def read_string(len : UInt16? = nil)
         len = read_int unless len
+        raise Error::PacketTooLarge.new(@max_packet_size, len) if len > @max_packet_size
         str = @io.read_string(len)
         if str.includes?('\u0000') || !str.valid_encoding?
           raise MQTT::Protocol::Error::PacketDecode.new "Illformed UTF-8 string"
@@ -47,13 +56,15 @@ module MQTT
           value += (b.to_u32 & 127u32) * multiplier
           break if b & 128 == 0
           multiplier *= 128
-          raise Error::PacketDecode.new "invalid remaining length" if multiplier > 128*128*128
+          raise Error::PacketDecode.new "invalid remaining length" if multiplier > MAX_REMAINING_LENGTH
         end
+        raise Error::PacketTooLarge.new(@max_packet_size, value) if value > @max_packet_size
         value
       end
 
       def read_bytes(len : Int? = nil)
         len = read_int unless len
+        raise Error::PacketTooLarge.new(@max_packet_size, len) if len > @max_packet_size
         bytes = Bytes.new(len)
         @io.read_fully(bytes)
         bytes

@@ -284,7 +284,7 @@ describe MQTT::Protocol::IO do
 
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO.new(mio, max_packet_size = 268435455u32)
 
     len1 = io.read_remaining_length
     len2 = io.read_remaining_length

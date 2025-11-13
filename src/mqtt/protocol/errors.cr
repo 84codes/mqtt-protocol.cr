@@ -7,6 +7,12 @@ module MQTT
       class PacketEncode < Error
       end
 
+      class PacketTooLarge < PacketDecode
+        def initialize(max_packet_size : UInt32, packet_size)
+          super "packet_max_size=#{max_packet_size} got=#{packet_size}"
+        end
+      end
+
       class InvalidFlags < PacketDecode
         def initialize(flags : UInt8)
           super sprintf("invalid flags: %04b", flags)

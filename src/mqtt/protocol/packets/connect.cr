@@ -89,6 +89,7 @@ module MQTT
         self.new(client_id, clean_session, keepalive, username, password, will, version)
       end
 
+      # ameba:disable Metrics/CyclomaticComplexity
       def to_io(io)
         # Remaining length is at least 10:
         # protocol name (str) + protocol version (byte) + connect flags (byte) + keep alive (int)

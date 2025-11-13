@@ -8,8 +8,8 @@ module MQTT
       end
 
       class PacketTooLarge < PacketDecode
-        def initialize(max_frame_size : UInt32, frame_size)
-          super "frame_max_size=#{max_frame_size} got=#{frame_size}"
+        def initialize(max_packet_size : UInt32, packet_size)
+          super "packet_max_size=#{max_packet_size} got=#{packet_size}"
         end
       end
 

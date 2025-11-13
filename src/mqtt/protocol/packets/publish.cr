@@ -46,7 +46,9 @@ module MQTT
         io.write_byte((TYPE << 4) | flags)
         io.write_remaining_length remaining_length
         io.write_string topic
-        io.write_int packet_id.not_nil! if qos.positive?
+        packet_id.try do |pid|
+          io.write_int pid if qos.positive?
+        end
         io.write_bytes_raw(payload)
       end
     end

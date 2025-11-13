@@ -177,7 +177,7 @@ describe MQTT::Protocol::Packet do
           connect = connect.should be_a MQTT::Protocol::Connect
           connect.username.should eq username
           connect.password.should eq password
-          connect.will.not_nil!.topic.should eq wtopic
+          connect.will.try(&.topic).should eq wtopic
         end
 
         it "supports MQTT 3.1 protocol" do
@@ -211,8 +211,8 @@ describe MQTT::Protocol::Packet do
 
           # Reset and read again to verify protocol name and version
           mio.rewind
-          header_byte = mio.read_byte      # Skip type/flags
-          remaining_length = mio.read_byte # Skip remaining length
+          _header_byte = mio.read_byte      # Skip type/flags
+          _remaining_length = mio.read_byte # Skip remaining length
 
           # Read protocol name
           protocol_len = mio.read_bytes(UInt16, IO::ByteFormat::NetworkEndian)
@@ -384,7 +384,7 @@ describe MQTT::Protocol::Packet do
 
           publish.topic.should eq topic
           publish.payload.should eq payload
-          publish.packet_id.not_nil!.should eq packet_id
+          publish.packet_id.should eq packet_id
         end
 
         it "raises error if dup is set for QoS 0 messages" do
@@ -938,16 +938,16 @@ describe MQTT::Protocol::Packet do
         it "handles multiple topics" do
           topics = ["MyTopic", "MyTopic2", "MyTopic4", "MyTopic3"]
           length = 0
-          topics.each do |t|
-            length += 2 + t.bytesize
+          topics.each do |topic|
+            length += 2 + topic.bytesize
           end
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.new(mio)
           io.write_byte 0b10100010u8           # Unsubscribe
           io.write_remaining_length 2 + length # 2 for variable header, rest is length
           io.write_int(50u16)
-          topics.each do |t|
-            io.write_string(t)
+          topics.each do |topic|
+            io.write_string(topic)
           end
           mio.rewind
 

@@ -303,4 +303,43 @@ describe MQTT::Protocol::IO do
       io.read_remaining_length
     end
   end
+
+  it "can checks max_packet_size on remainin length" do
+    mio = IO::Memory.new
+    mio.write Bytes[0xFFu8, 0xFFu8, 0xFFu8, 0x7Fu8]
+
+    mio.rewind
+
+    io = MQTT::Protocol::IO.new(mio)
+
+    expect_raises(MQTT::Protocol::Error::PacketTooLarge) do
+      io.read_remaining_length
+    end
+    mio.rewind
+    io = MQTT::Protocol::IO.new(mio, max_packet_size: 268435455u32)
+    io.read_remaining_length
+  end
+
+  it "checks read_string for max_packet_size" do
+    mio = IO::Memory.new
+    str1 = "hello"
+    str1.bytesize.to_u16.to_io(mio, ::IO::ByteFormat::NetworkEndian)
+    mio.write str1.to_slice
+    mio.rewind
+    io = MQTT::Protocol::IO.new(mio, max_packet_size: 4)
+    expect_raises(MQTT::Protocol::Error::PacketTooLarge) do
+      io.read_string
+    end
+  end
+  it "checks read_bytes for max_packet_size" do
+    mio = IO::Memory.new
+    str1 = "hello"
+    str1.bytesize.to_u16.to_io(mio, ::IO::ByteFormat::NetworkEndian)
+    mio.write str1.to_slice
+    mio.rewind
+    io = MQTT::Protocol::IO.new(mio, max_packet_size: 4)
+    expect_raises(MQTT::Protocol::Error::PacketTooLarge) do
+      io.read_bytes
+    end
+  end
 end

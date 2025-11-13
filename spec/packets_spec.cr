@@ -177,8 +177,8 @@ describe MQTT::Protocol::Packet do
           connect = connect.should be_a MQTT::Protocol::Connect
           connect.username.should eq username
           connect.password.should eq password
-         will = connect.will.should_not be_nil
-         will.topic.should eq wtopic
+          will = connect.will.should_not be_nil
+          will.topic.should eq wtopic
         end
 
         it "supports MQTT 3.1 protocol" do

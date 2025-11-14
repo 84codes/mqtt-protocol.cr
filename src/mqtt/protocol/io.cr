@@ -1,7 +1,8 @@
 require "./packets"
 
 module MQTT
-  MAX_REMAINING_LENGTH = (128 * 128 * 128).to_u32
+  MAX_PAYLOAD_SIZE = 268_435_455u32 # 256MiB
+  MAX_MULTIPLIER   = (128 * 128 * 128).to_u32
 
   module Protocol
     struct IO
@@ -9,7 +10,7 @@ module MQTT
 
       def self.new(io : ::IO, max_packet_size : UInt32? = nil,
                    byte_format = ::IO::ByteFormat::NetworkEndian)
-        new(io, max_packet_size || MAX_REMAINING_LENGTH, byte_format)
+        new(io, max_packet_size || MAX_PAYLOAD_SIZE, byte_format)
       end
 
       protected def initialize(@io : ::IO, @max_packet_size : UInt32,
@@ -56,7 +57,7 @@ module MQTT
           value += (b.to_u32 & 127u32) * multiplier
           break if b & 128 == 0
           multiplier *= 128
-          raise Error::PacketDecode.new "invalid remaining length" if multiplier > MAX_REMAINING_LENGTH
+          raise Error::PacketDecode.new "invalid remaining length" if multiplier > MAX_MULTIPLIER
         end
         raise Error::PacketTooLarge.new(@max_packet_size, value) if value > @max_packet_size
         value

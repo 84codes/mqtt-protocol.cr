@@ -7,9 +7,20 @@ module MQTT
       class PacketEncode < Error
       end
 
-      class PacketTooLarge < PacketDecode
+      # A decode violation that a v5 consumer must answer with a specific
+      # reason code (then close). Subclasses PacketDecode so existing v3
+      # consumers, which just close on PacketDecode, keep working unchanged.
+      class ProtocolError < PacketDecode
+        getter reason_code : UInt8
+
+        def initialize(@reason_code : UInt8, message = "protocol error")
+          super(message)
+        end
+      end
+
+      class PacketTooLarge < ProtocolError
         def initialize(max_packet_size : UInt32, packet_size)
-          super "packet_max_size=#{max_packet_size} got=#{packet_size}"
+          super(0x95u8, "packet_max_size=#{max_packet_size} got=#{packet_size}")
         end
       end
 

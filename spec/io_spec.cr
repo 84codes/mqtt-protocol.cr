@@ -8,7 +8,7 @@ describe MQTT::Protocol::IO do
     mio.write_byte(0u8)
     mio.rewind
 
-    packet = MQTT::Protocol::IO.new(mio).read_packet
+    packet = MQTT::Protocol::IO::V3.new(mio).read_packet
 
     packet.should be_a MQTT::Protocol::PingReq
   end
@@ -17,7 +17,7 @@ describe MQTT::Protocol::IO do
     mio = IO::Memory.new
 
     pingreq = MQTT::Protocol::PingReq.new
-    MQTT::Protocol::IO.new(mio).write_packet(pingreq)
+    MQTT::Protocol::IO::V3.new(mio).write_packet(pingreq)
     mio.rewind
 
     mio.to_slice.should eq Bytes[12u8 << 4, 0u8]
@@ -25,7 +25,7 @@ describe MQTT::Protocol::IO do
 
   it "can write int" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
 
     io.write_int 500
 
@@ -37,7 +37,7 @@ describe MQTT::Protocol::IO do
 
   it "can write byte" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
 
     io.write_byte 33u8
 
@@ -51,7 +51,7 @@ describe MQTT::Protocol::IO do
     str = "hello world"
 
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
 
     io.write_string str
 
@@ -66,7 +66,7 @@ describe MQTT::Protocol::IO do
     bytes = Bytes[1u8, 2u8, 3u8]
 
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
 
     io.write_bytes bytes
 
@@ -82,7 +82,7 @@ describe MQTT::Protocol::IO do
     bytes = "abc".to_slice
 
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
 
     io.write_bytes_raw bytes
     mio.rewind
@@ -95,7 +95,7 @@ describe MQTT::Protocol::IO do
 
   it "can write remaining length 1 byte" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
     io.write_remaining_length(0x00)
     io.write_remaining_length(0x7F)
     mio.rewind
@@ -112,7 +112,7 @@ describe MQTT::Protocol::IO do
 
   it "can write remaining length 2 bytes" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
     io.write_remaining_length(128)
     io.write_remaining_length(16_383)
     mio.rewind
@@ -132,7 +132,7 @@ describe MQTT::Protocol::IO do
 
   it "can write remaining length 3 bytes" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
     io.write_remaining_length(16_384)
     io.write_remaining_length(2_097_151)
     mio.rewind
@@ -152,7 +152,7 @@ describe MQTT::Protocol::IO do
 
   it "can write remaining length 4 bytes" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
     io.write_remaining_length(2_097_152)
     io.write_remaining_length(268_435_455)
     mio.rewind
@@ -175,7 +175,7 @@ describe MQTT::Protocol::IO do
     100u16.to_io(mio, ::IO::ByteFormat::NetworkEndian)
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
     data = io.read_int
 
     data.should eq 100u16
@@ -186,7 +186,7 @@ describe MQTT::Protocol::IO do
     mio.write_byte 100u8
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
     data = io.read_byte
 
     data.should eq 100u8
@@ -200,7 +200,7 @@ describe MQTT::Protocol::IO do
     mio.write str.to_slice
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
     data = io.read_string
 
     data.should eq "hello world"
@@ -215,7 +215,7 @@ describe MQTT::Protocol::IO do
     0x0000u16.to_io(mio, ::IO::ByteFormat::NetworkEndian)
     mio.write str2.to_slice
     mio.rewind
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
     expect_raises(MQTT::Protocol::Error::PacketDecode) do
       io.read_string
     end
@@ -227,7 +227,7 @@ describe MQTT::Protocol::IO do
     mio.write_byte 0x7F
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
 
     len1 = io.read_remaining_length
     len2 = io.read_remaining_length
@@ -246,7 +246,7 @@ describe MQTT::Protocol::IO do
 
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
 
     len1 = io.read_remaining_length
     len2 = io.read_remaining_length
@@ -265,7 +265,7 @@ describe MQTT::Protocol::IO do
 
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
 
     len1 = io.read_remaining_length
     len2 = io.read_remaining_length
@@ -284,7 +284,7 @@ describe MQTT::Protocol::IO do
 
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio, max_packet_size: 268435455u32)
+    io = MQTT::Protocol::IO::V3.new(mio, max_packet_size: 268435455u32)
 
     len1 = io.read_remaining_length
     len2 = io.read_remaining_length
@@ -298,8 +298,8 @@ describe MQTT::Protocol::IO do
     mio.write Bytes[0x80u8, 0x80u8, 0x80u8, 0x80u8, 0x01u8]
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio)
-    expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid remaining length/) do
+    io = MQTT::Protocol::IO::V3.new(mio)
+    expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid variable byte integer/) do
       io.read_remaining_length
     end
   end
@@ -310,9 +310,9 @@ describe MQTT::Protocol::IO do
 
     mio.rewind
 
-    io = MQTT::Protocol::IO.new(mio)
+    io = MQTT::Protocol::IO::V3.new(mio)
 
-    io = MQTT::Protocol::IO.new(mio, max_packet_size: 268435454u32)
+    io = MQTT::Protocol::IO::V3.new(mio, max_packet_size: 268435454u32)
     expect_raises(MQTT::Protocol::Error::PacketTooLarge) do
       io.read_remaining_length
     end
@@ -324,7 +324,7 @@ describe MQTT::Protocol::IO do
     str1.bytesize.to_u16.to_io(mio, ::IO::ByteFormat::NetworkEndian)
     mio.write str1.to_slice
     mio.rewind
-    io = MQTT::Protocol::IO.new(mio, max_packet_size: 4)
+    io = MQTT::Protocol::IO::V3.new(mio, max_packet_size: 4)
     expect_raises(MQTT::Protocol::Error::PacketTooLarge) do
       io.read_string
     end
@@ -335,7 +335,7 @@ describe MQTT::Protocol::IO do
     str1.bytesize.to_u16.to_io(mio, ::IO::ByteFormat::NetworkEndian)
     mio.write str1.to_slice
     mio.rewind
-    io = MQTT::Protocol::IO.new(mio, max_packet_size: 4)
+    io = MQTT::Protocol::IO::V3.new(mio, max_packet_size: 4)
     expect_raises(MQTT::Protocol::Error::PacketTooLarge) do
       io.read_bytes
     end

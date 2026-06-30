@@ -97,11 +97,54 @@ describe MQTT::Protocol::Subscribe do
     expect_raises(MQTT::Protocol::Error::PacketDecode) { decode_v5(bytes) }
   end
 
+  it "rejects retain handling 3 [MQTT-3.8.3-4]" do
+    # filter "a/b", options 0x30 (retain handling = 3, a reserved value).
+    bytes = Bytes[0x82, 0x09, 0x00, 0x01, 0x00,
+      0x00, 0x03, 'a'.ord, '/'.ord, 'b'.ord, 0x30]
+    expect_raises(MQTT::Protocol::Error::PacketDecode) { decode_v5(bytes) }
+  end
+
   it "rejects a subscription identifier of 0 [MQTT-3.3.2-9]/[MQTT-3.8.3-4]" do
     # props: subscription identifier (0x0B) = 0, then filter "a/b" options 0.
     bytes = Bytes[0x82, 0x0B, 0x00, 0x01, 0x02, 0x0B, 0x00,
       0x00, 0x03, 'a'.ord, '/'.ord, 'b'.ord, 0x00]
     expect_raises(MQTT::Protocol::Error::PacketDecode) { decode_v5(bytes) }
+  end
+
+  # Decode against fixed bytes, asserting every field across two filters with
+  # different option bits. Round-trips can pass when encode and decode share the
+  # same wrong assumption; this pins the actual wire format.
+  it "is parsed" do
+    # 0x82 | rem_len 24 | packet id 10
+    # props(9): subscription_identifier 0x0B=5, user property 0x26 "a"="b"
+    # filter "a/b" options 0x01 (qos1)
+    # filter "c/#" options 0x1E (qos2 | NL | RAP | RH=1)
+    bytes = Bytes[
+      0x82, 0x18,
+      0x00, 0x0A,
+      0x09, 0x0B, 0x05, 0x26, 0x00, 0x01, 0x61, 0x00, 0x01, 0x62,
+      0x00, 0x03, 0x61, 0x2F, 0x62, 0x01,
+      0x00, 0x03, 0x63, 0x2F, 0x23, 0x1E,
+    ]
+    subscribe = decode_v5(bytes).as(MQTT::Protocol::Subscribe)
+    subscribe.packet_id.should eq 10u16
+    subscribe.properties.subscription_identifier.should eq 5u32
+    subscribe.properties.user_properties.should eq [{"a", "b"}]
+
+    subscribe.topic_filters.size.should eq 2
+    f1 = subscribe.topic_filters[0]
+    f1.topic.should eq "a/b"
+    f1.qos.should eq 1u8
+    f1.no_local?.should be_false
+    f1.retain_as_published?.should be_false
+    f1.retain_handling.should eq 0u8
+
+    f2 = subscribe.topic_filters[1]
+    f2.topic.should eq "c/#"
+    f2.qos.should eq 2u8
+    f2.no_local?.should be_true
+    f2.retain_as_published?.should be_true
+    f2.retain_handling.should eq 1u8
   end
 end
 

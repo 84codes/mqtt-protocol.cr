@@ -169,6 +169,34 @@ describe MQTT::Protocol::Publish do
     bytes = Bytes[0x30, 0x0A, 0x00, 0x01, 'a'.ord, 0x00]
     expect_raises(MQTT::Protocol::Error::PacketDecode) { decode_v5(bytes) }
   end
+
+  # Decode against fixed bytes, asserting every field including the fixed-header
+  # flag bits. Round-trips can pass when encode and decode share the same wrong
+  # assumption; this pins the actual wire format.
+  it "is parsed" do
+    # 0x33 = type 3 | dup 0 | qos 1 | retain 1
+    # rem_len 40 | topic "sensor/temp" | packet id 42
+    # props(20): payload_format 0x01=1, message_expiry 0x02=120, content_type 0x03="text/plain"
+    # payload "21.5"
+    bytes = Bytes[
+      0x33, 0x28,
+      0x00, 0x0B, 0x73, 0x65, 0x6E, 0x73, 0x6F, 0x72, 0x2F, 0x74, 0x65, 0x6D, 0x70,
+      0x00, 0x2A,
+      0x14, 0x01, 0x01, 0x02, 0x00, 0x00, 0x00, 0x78,
+      0x03, 0x00, 0x0A, 0x74, 0x65, 0x78, 0x74, 0x2F, 0x70, 0x6C, 0x61, 0x69, 0x6E,
+      0x32, 0x31, 0x2E, 0x35,
+    ]
+    publish = decode_v5(bytes).as(MQTT::Protocol::Publish)
+    publish.topic.should eq "sensor/temp"
+    publish.packet_id.should eq 42u16
+    publish.qos.should eq 1u8
+    publish.retain?.should be_true
+    publish.dup?.should be_false
+    String.new(publish.payload).should eq "21.5"
+    publish.properties.payload_format_indicator.should be_true
+    publish.properties.message_expiry_interval.should eq 120u32
+    publish.properties.content_type.should eq "text/plain"
+  end
 end
 
 describe MQTT::Protocol::PubAck do
@@ -281,6 +309,13 @@ describe MQTT::Protocol::PubRel do
 end
 
 describe MQTT::Protocol::PubComp do
+  it "uses fixed-header flags 0b0000 (0x70)" do
+    # Pins the pre-existing v3 wire-bug fix (flags were 0b0010 -> corrected to
+    # 0b0000); round-trips alone would not catch a flag-bit regression.
+    pubcomp = MQTT::Protocol::PubComp.new(packet_id: 7u16)
+    encode_v5(pubcomp).should eq Bytes[0x70, 0x02, 0x00, 0x07]
+  end
+
   it "round-trips reason code" do
     pubcomp = MQTT::Protocol::PubComp.new(
       packet_id: 7u16,

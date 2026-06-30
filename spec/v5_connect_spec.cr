@@ -176,6 +176,112 @@ describe MQTT::Protocol::Connect do
     rio.version.should eq MQTT::Protocol::Version::V3_1_1
     connect.properties.empty?.should be_true
   end
+
+  # T1: CONNECT is the most complex packet (protocol name + properties +
+  # will-properties + username/password arithmetic in remaining_length) and was
+  # the one packet without a bytesize==serialized guard. The Medium finding
+  # family was "bytesize != bytes written", so pin it here in every shape.
+  describe "#bytesize matches the serialized size" do
+    will_props = MQTT::Protocol::WillProperties.new(will_delay_interval: 5u32)
+    connect_props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 10u32)
+    will = MQTT::Protocol::Will.new("wt", "bye".to_slice, 1u8, true)
+    will_v5 = MQTT::Protocol::Will.new("wt", "bye".to_slice, 1u8, true, will_props)
+
+    {
+      "bare"                     => {nil, nil, nil, MQTT::Protocol::ConnectProperties.new},
+      "username only"            => {"user", nil, nil, MQTT::Protocol::ConnectProperties.new},
+      "username + password"      => {"user", "pass".to_slice, nil, MQTT::Protocol::ConnectProperties.new},
+      "will"                     => {nil, nil, will, MQTT::Protocol::ConnectProperties.new},
+      "will + username/password" => {"user", "pass".to_slice, will, MQTT::Protocol::ConnectProperties.new},
+    }.each do |name, (username, password, w, props)|
+      it "for a v3.1.1 CONNECT (#{name})" do
+        connect = MQTT::Protocol::Connect.new("cid", false, 30u16, username, password, w,
+          MQTT::Protocol::Version::V3_1_1, props)
+        connect.bytesize(MQTT::Protocol::Version::V3_1_1).to_i
+          .should eq encode(connect, MQTT::Protocol::Version::V3_1_1).size
+      end
+    end
+
+    {
+      "bare"                    => {nil, nil, nil, MQTT::Protocol::ConnectProperties.new},
+      "username only"           => {"user", nil, nil, MQTT::Protocol::ConnectProperties.new},
+      "username + password"     => {"user", "pass".to_slice, nil, MQTT::Protocol::ConnectProperties.new},
+      "will + will properties"  => {nil, nil, will_v5, MQTT::Protocol::ConnectProperties.new},
+      "everything + properties" => {"user", "pass".to_slice, will_v5, connect_props},
+    }.each do |name, (username, password, w, props)|
+      it "for a v5 CONNECT (#{name})" do
+        connect = MQTT::Protocol::Connect.new("cid", false, 30u16, username, password, w,
+          MQTT::Protocol::Version::V5, props)
+        connect.bytesize(MQTT::Protocol::Version::V5).to_i
+          .should eq encode(connect, MQTT::Protocol::Version::V5).size
+      end
+    end
+  end
+
+  # Exact-byte vectors (decode + re-encode), hand-derived from the wire format.
+  # Round-trips can pass when encode and decode share the same wrong assumption;
+  # these pin the actual bytes.
+  describe "a minimal v5 CONNECT" do
+    # 0x10 | rem_len 19 | "MQTT" | level 5 | flags 0x02 (clean) | keepalive 60
+    # | props 0x00 (empty) | client id "client"
+    bytes = Bytes[0x10, 0x13, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x05,
+      0x02, 0x00, 0x3C, 0x00, 0x00, 0x06, 0x63, 0x6C, 0x69, 0x65, 0x6E, 0x74]
+
+    it "is parsed" do
+      connect = decode(bytes, MQTT::Protocol::Version::V5).as(MQTT::Protocol::Connect)
+      connect.version.should eq MQTT::Protocol::Version::V5
+      connect.client_id.should eq "client"
+      connect.clean_session?.should be_true
+      connect.keepalive.should eq 60u16
+      connect.username.should be_nil
+      connect.password.should be_nil
+      connect.will.should be_nil
+      connect.properties.empty?.should be_true
+    end
+
+    it "can write" do
+      connect = MQTT::Protocol::Connect.new("client", true, 60u16, nil, nil, nil,
+        MQTT::Protocol::Version::V5)
+      encode(connect, MQTT::Protocol::Version::V5).should eq bytes
+    end
+  end
+
+  describe "a full v5 CONNECT" do
+    # flags 0xEC (user+pass+will, will qos 1, will retain, clean) |
+    # keepalive 30 | connect props {session_expiry 10} | client "cid" |
+    # will props {will_delay 5} | will topic "wt" | will payload "bye" |
+    # username "user" | password "pass"
+    bytes = Bytes[0x10, 0x30, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x05, 0xEC,
+      0x00, 0x1E, 0x05, 0x11, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x03, 0x63, 0x69,
+      0x64, 0x05, 0x18, 0x00, 0x00, 0x00, 0x05, 0x00, 0x02, 0x77, 0x74, 0x00,
+      0x03, 0x62, 0x79, 0x65, 0x00, 0x04, 0x75, 0x73, 0x65, 0x72, 0x00, 0x04,
+      0x70, 0x61, 0x73, 0x73]
+
+    it "is parsed" do
+      connect = decode(bytes, MQTT::Protocol::Version::V5).as(MQTT::Protocol::Connect)
+      connect.client_id.should eq "cid"
+      connect.clean_session?.should be_false
+      connect.keepalive.should eq 30u16
+      connect.username.should eq "user"
+      String.new(connect.password.not_nil!).should eq "pass"
+      connect.properties.session_expiry_interval.should eq 10u32
+      will = connect.will.not_nil!
+      will.topic.should eq "wt"
+      String.new(will.payload).should eq "bye"
+      will.qos.should eq 1u8
+      will.retain?.should be_true
+      will.properties.will_delay_interval.should eq 5u32
+    end
+
+    it "can write" do
+      will = MQTT::Protocol::Will.new("wt", "bye".to_slice, 1u8, true,
+        MQTT::Protocol::WillProperties.new(will_delay_interval: 5u32))
+      connect = MQTT::Protocol::Connect.new("cid", false, 30u16, "user", "pass".to_slice,
+        will, MQTT::Protocol::Version::V5,
+        MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 10u32))
+      encode(connect, MQTT::Protocol::Version::V5).should eq bytes
+    end
+  end
 end
 
 describe MQTT::Protocol::Connack do
@@ -280,25 +386,27 @@ describe MQTT::Protocol::Connack do
     end
   end
 
-  # Golden vector hand-derived from the MQTT 5.0 spec: session_present=false,
+  # Exact-byte vector hand-derived from the MQTT 5.0 spec: session_present=false,
   # reason Success, props {receive_maximum: 10, maximum_qos: 1}.
   # Body: 21 00 0A (recv max) 24 01 (max qos) = 5 bytes.
-  it "decodes a golden v5 CONNACK and exposes every field" do
-    golden = Bytes[0x20, 0x08, 0x00, 0x00, 0x05, 0x21, 0x00, 0x0A, 0x24, 0x01]
-    connack = decode(golden, MQTT::Protocol::Version::V5).as(MQTT::Protocol::Connack)
-    connack.session_present?.should be_false
-    connack.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::Success
-    connack.properties.receive_maximum.should eq 10u16
-    connack.properties.maximum_qos.should eq 1u8
-  end
+  describe "a v5 CONNACK with properties" do
+    bytes = Bytes[0x20, 0x08, 0x00, 0x00, 0x05, 0x21, 0x00, 0x0A, 0x24, 0x01]
 
-  it "encodes the golden v5 CONNACK to the exact bytes" do
-    golden = Bytes[0x20, 0x08, 0x00, 0x00, 0x05, 0x21, 0x00, 0x0A, 0x24, 0x01]
-    connack = MQTT::Protocol::Connack.new(
-      session_present: false,
-      reason_code: MQTT::Protocol::Connack::ReasonCode::Success,
-      properties: MQTT::Protocol::ConnackProperties.new(receive_maximum: 10u16, maximum_qos: 1u8),
-    )
-    encode(connack, MQTT::Protocol::Version::V5).should eq golden
+    it "is parsed" do
+      connack = decode(bytes, MQTT::Protocol::Version::V5).as(MQTT::Protocol::Connack)
+      connack.session_present?.should be_false
+      connack.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::Success
+      connack.properties.receive_maximum.should eq 10u16
+      connack.properties.maximum_qos.should eq 1u8
+    end
+
+    it "can write" do
+      connack = MQTT::Protocol::Connack.new(
+        session_present: false,
+        reason_code: MQTT::Protocol::Connack::ReasonCode::Success,
+        properties: MQTT::Protocol::ConnackProperties.new(receive_maximum: 10u16, maximum_qos: 1u8),
+      )
+      encode(connack, MQTT::Protocol::Version::V5).should eq bytes
+    end
   end
 end

@@ -104,6 +104,17 @@ describe MQTT::Protocol::Subscribe do
     expect_raises(MQTT::Protocol::Error::PacketDecode) { decode_v5(bytes) }
   end
 
+  it "rejects reserved v3.1.1 subscription-option bits 2-7 [MQTT-3.8.3-4]" do
+    # v3 has no properties section; only the two QoS bits are defined. Options
+    # 0x04 sets bit 2 (No Local, a v5-only flag) which is reserved in v3.1.1.
+    bytes = Bytes[0x82, 0x06, 0x00, 0x01, 0x00, 0x01, 'a'.ord, 0x04]
+    mio = IO::Memory.new(bytes.size)
+    mio.write bytes
+    mio.rewind
+    io = MQTT::Protocol::IO::V3.new(mio)
+    expect_raises(MQTT::Protocol::Error::PacketDecode) { MQTT::Protocol::Packet.from_io(io) }
+  end
+
   it "rejects a subscription identifier of 0 [MQTT-3.3.2-9]/[MQTT-3.8.3-4]" do
     # props: subscription identifier (0x0B) = 0, then filter "a/b" options 0.
     bytes = Bytes[0x82, 0x0B, 0x00, 0x01, 0x02, 0x0B, 0x00,

@@ -75,6 +75,13 @@ module MQTT
         packet.to_io(self)
       end
 
+      # Wire size of `packet` when framed for this IO's version. The IO is the
+      # single source of truth for the version, so callers can't measure a
+      # packet with a different version than `write_packet` would use.
+      def bytesize(packet : Packet) : UInt32
+        packet.bytesize(version)
+      end
+
       # Underlying read that returns nil at a clean end-of-stream (vs raising),
       # so the packet dispatcher can tell "connection closed" from "truncated
       # packet".
@@ -335,6 +342,12 @@ module MQTT
         end
 
         def validate_subscription_options(options : UInt8) : Nil
+          # MQTT 3.1.1: only the two QoS bits are defined; bits 7-2 are reserved
+          # and MUST be zero, otherwise the packet is malformed [MQTT-3-8.3-4].
+          # (v5 gives bits 2-5 meaning, so this rejection is v3-only.)
+          unless (options & 0b1111_1100u8).zero?
+            raise Error::PacketDecode.new "Malformed packet: reserved subscription option bits set"
+          end
         end
 
         def read_connack_reason(byte : UInt8)

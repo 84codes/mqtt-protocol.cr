@@ -28,7 +28,7 @@ module MQTT
         bytes_to_read = io.consume(bytes_to_read, consumed)
         topics = Array(String).new
         while bytes_to_read > 0
-          topic = io.read_string
+          topic = io.read_string(remaining: bytes_to_read)
           topics << topic
           bytes_to_read = io.consume(bytes_to_read, 2 + topic.bytesize)
         end

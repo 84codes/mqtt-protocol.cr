@@ -73,7 +73,7 @@ module MQTT
 
         topic_filters = Array(TopicFilter).new
         while bytes_to_read > 0
-          topic = io.read_string
+          topic = io.read_string(remaining: bytes_to_read)
           options = io.read_byte
           qos = options & 0b0000_0011u8
           decode_assert qos < 3, "Malformed packet"

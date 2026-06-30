@@ -86,8 +86,11 @@ module MQTT
         @io.read_byte || raise ::IO::EOFError.new
       end
 
-      def read_string(len : UInt16? = nil)
-        len = read_int unless len
+      def read_string(len : UInt16? = nil, remaining : Int? = nil)
+        if len.nil?
+          len = read_int
+          check_field_within(len, remaining)
+        end
         raise Error::PacketTooLarge.new(@max_packet_size, len) if len > @max_packet_size
         str = @io.read_string(len)
         if str.includes?('\u0000') || !str.valid_encoding?
@@ -104,8 +107,11 @@ module MQTT
         UInt32.from_io(@io, @byte_format)
       end
 
-      def read_string_pair : {String, String}
-        {read_string, read_string}
+      def read_string_pair(remaining : Int? = nil) : {String, String}
+        key = read_string(remaining: remaining)
+        # The value's prefix + bytes must fit in what's left after the key.
+        value = read_string(remaining: remaining ? remaining - 2 - key.bytesize : nil)
+        {key, value}
       end
 
       # Variable Byte Integer (MQTT-1.5.5): up to four bytes, seven value bits
@@ -136,12 +142,31 @@ module MQTT
         value
       end
 
-      def read_bytes(len : Int? = nil)
-        len = read_int unless len
+      def read_bytes(len : Int? = nil, remaining : Int? = nil)
+        if len.nil?
+          len = read_int
+          check_field_within(len, remaining)
+        end
         raise Error::PacketTooLarge.new(@max_packet_size, len) if len > @max_packet_size
         bytes = Bytes.new(len)
         @io.read_fully(bytes)
         bytes
+      end
+
+      # A length-prefixed string/binary field occupies 2 (its UInt16 length
+      # prefix) + len bytes. When the caller knows how many bytes are left in the
+      # enclosing packet/section, reject a declared length that would read past
+      # that boundary BEFORE allocating: on a streaming socket an unbounded
+      # read_fully would otherwise block waiting for bytes that belong to a later
+      # packet (or never arrive), and `@max_packet_size` alone does not bound a
+      # field against its own packet's remaining length ([MQTT-1.5.4]). A field
+      # that overruns the packet cannot be parsed, so it is a Malformed Packet
+      # (reason 0x81), matching the property-section length check.
+      private def check_field_within(len : UInt16, remaining : Int?) : Nil
+        return unless remaining
+        if 2 + len.to_i > remaining
+          raise Error::ProtocolError.new(0x81u8, "field of #{len} bytes exceeds #{remaining} bytes left in packet")
+        end
       end
 
       # Subtract `n` bytes from the bytes left to read in the current packet,

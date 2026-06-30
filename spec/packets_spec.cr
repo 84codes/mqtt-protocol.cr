@@ -80,7 +80,9 @@ describe MQTT::Protocol::Packet do
         it "client_id is parsed" do
           client_id = "foobar"
 
-          remaining_length = client_id.bytesize + 10
+          # protocol name "MQTT"(2-byte len + 4) + protocol(1) + flags(1) +
+          # keepalive(2) + client-id 2-byte len prefix(2) = 12, plus the id bytes
+          remaining_length = client_id.bytesize + 12
 
           mio = IO::Memory.new
           io = MQTT::Protocol::IO::V3.new(mio)
@@ -136,7 +138,9 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO::V3.new(mio)
           io.write_byte 0b00010000u8 # connect
-          io.write_remaining_length 10u8
+          # protocol name "MQTT"(2-byte len + 4) + protocol(1) + flags(1) +
+          # keepalive(2) + empty client-id 2-byte len prefix(2) = 12
+          io.write_remaining_length 12u8
           io.write_string "MQTT"
           io.write_byte 4u8          # protocol = 4 (3.1.1)
           io.write_byte 0b00000000u8 # Connect flags

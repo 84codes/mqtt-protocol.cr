@@ -177,6 +177,26 @@ describe MQTT::Protocol::Connect do
     connect.properties.empty?.should be_true
   end
 
+  it "rejects a CONNECT whose remaining_length over-declares (trailing bytes)" do
+    # A valid minimal v5 CONNECT body is 19 bytes; this declares 20 and appends
+    # one trailing byte. The fields parse, leaving 1 unconsumed byte that would
+    # otherwise desync the next packet. [MQTT-2.1.4]
+    bytes = Bytes[
+      0x10, 0x14,                                     # CONNECT, remaining_length 20 (one more than the 19-byte body)
+      0x00, 0x04, 0x4D, 0x51, 0x54, 0x54,             # "MQTT"
+      0x05,                                           # protocol version 5
+      0x02,                                           # clean start
+      0x00, 0x3C,                                     # keepalive 60
+      0x00,                                           # empty properties
+      0x00, 0x06, 0x63, 0x6C, 0x69, 0x65, 0x6E, 0x74, # client id "client"
+      0xAA,                                           # trailing byte covered by the inflated remaining_length
+    ]
+    ex = expect_raises(MQTT::Protocol::Error::ProtocolError) do
+      decode(bytes, MQTT::Protocol::Version::V5)
+    end
+    ex.reason_code.should eq 0x81u8
+  end
+
   # T1: CONNECT is the most complex packet (protocol name + properties +
   # will-properties + username/password arithmetic in remaining_length) and was
   # the one packet without a bytesize==serialized guard. The Medium finding

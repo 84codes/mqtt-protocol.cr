@@ -148,11 +148,11 @@ module MQTT
                 props.{{ s[0].id }} = io.read_four_byte_int
                 consumed += 4
               {% elsif k == :string %}
-                str = io.read_string
+                str = io.read_string(remaining: total - consumed)
                 props.{{ s[0].id }} = str
                 consumed += 2 + str.bytesize
               {% elsif k == :binary %}
-                bytes = io.read_bytes
+                bytes = io.read_bytes(remaining: total - consumed)
                 props.{{ s[0].id }} = bytes
                 consumed += 2 + bytes.size
               {% elsif k == :var_int %}
@@ -162,7 +162,7 @@ module MQTT
               {% end %}
             {% end %}
             when 0x26u8
-              pair = io.read_string_pair
+              pair = io.read_string_pair(remaining: total - consumed)
               props.user_properties << pair
               consumed += 2 + pair[0].bytesize + 2 + pair[1].bytesize
             {% if has_sub_ids %}

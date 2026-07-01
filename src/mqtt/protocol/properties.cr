@@ -168,6 +168,11 @@ module MQTT
             {% if has_sub_ids %}
             when 0x0Bu8
               val = io.read_variable_byte_int
+              # A Subscription Identifier has the range 1..268,435,455; 0 is a
+              # Protocol Error (3.3.2.3.8 / [MQTT-3.8.2-1]).
+              if val.zero?
+                raise Error::ProtocolError.new(0x82u8, "subscription identifier must not be 0")
+              end
               props.subscription_identifiers << val
               consumed += MQTT::Protocol::IO.variable_byte_int_size(val)
             {% end %}

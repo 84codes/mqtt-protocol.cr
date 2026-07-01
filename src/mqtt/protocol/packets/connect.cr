@@ -21,6 +21,16 @@ module MQTT
                      @version : Version = Version::V3_1_1, @properties = ConnectProperties.new)
       end
 
+      # Return a copy with the given fields changed and the rest carried over, so
+      # a consumer (e.g. assigning a client id server-side) can't silently drop
+      # version/properties by re-listing the constructor. Mirrors `record`'s
+      # `copy_with`, hand-written because Connect is a plain `struct < Packet`.
+      def copy_with(client_id = @client_id, clean_session = @clean_session,
+                    keepalive = @keepalive, username = @username, password = @password,
+                    will = @will, version = @version, properties = @properties)
+        Connect.new(client_id, clean_session, keepalive, username, password, will, version, properties)
+      end
+
       # CONNECT carries its own protocol version, so its framing follows
       # @version regardless of the argument (which exists for the base signature).
       def remaining_length(version : Version) : UInt32

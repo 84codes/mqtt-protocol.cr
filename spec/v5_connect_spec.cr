@@ -87,6 +87,48 @@ describe MQTT::Protocol::Connect do
     expect_raises(MQTT::Protocol::Error::PacketDecode, /must be CONNECT/) { boot.read_connect }
   end
 
+  it "copy_with changes only the named field and carries the rest over" do
+    props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 30u32)
+    original = MQTT::Protocol::Connect.new(
+      client_id: "",
+      clean_session: false,
+      keepalive: 10u16,
+      username: "user",
+      password: "pass".to_slice,
+      will: nil,
+      version: MQTT::Protocol::Version::V5,
+      properties: props,
+    )
+    copy = original.copy_with(client_id: "assigned-id")
+    copy.client_id.should eq "assigned-id"
+    copy.clean_session?.should be_false
+    copy.keepalive.should eq 10u16
+    copy.username.should eq "user"
+    # version and properties are the fields a manual rebuild silently dropped.
+    copy.version.should eq MQTT::Protocol::Version::V5
+    copy.properties.should eq props
+  end
+
+  it "copy_with can change other fields (e.g. version) and carries the rest over" do
+    props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 30u32)
+    original = MQTT::Protocol::Connect.new(
+      client_id: "cid",
+      clean_session: true,
+      keepalive: 30u16,
+      username: nil,
+      password: nil,
+      will: nil,
+      version: MQTT::Protocol::Version::V5,
+      properties: props,
+    )
+    copy = original.copy_with(version: MQTT::Protocol::Version::V3_1_1, keepalive: 60u16)
+    copy.version.should eq MQTT::Protocol::Version::V3_1_1
+    copy.keepalive.should eq 60u16
+    copy.client_id.should eq "cid"
+    copy.clean_session?.should be_true
+    copy.properties.should eq props
+  end
+
   it "accepts a client id longer than 255 bytes in v5" do
     long_id = "a" * 300
     connect = MQTT::Protocol::Connect.new(

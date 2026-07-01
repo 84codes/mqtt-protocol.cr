@@ -58,6 +58,35 @@ describe MQTT::Protocol::Connect do
     connect.properties.empty?.should be_true
   end
 
+  it "reads CONNECT on a caller-owned bootstrap IO and reframes (instance method)" do
+    mio = IO::Memory.new
+    io = MQTT::Protocol::IO::V3.new(mio)
+    io.write_byte 0b0001_0000u8
+    io.write_remaining_length 13u8
+    io.write_string "MQTT"
+    io.write_byte 0x05u8
+    io.write_byte 0b0000_0010u8
+    io.write_int 60u16
+    io.write_byte 0x00u8
+    io.write_string ""
+    mio.rewind
+
+    # The caller keeps the boot IO; the tuple only rebinds on success, so a
+    # rejecting server still has the v3 IO to frame a CONNACK on the error path.
+    boot = MQTT::Protocol::IO::V3.new(mio)
+    connect, conn_io = boot.read_connect
+    connect.version.should eq MQTT::Protocol::Version::V5
+    conn_io.should be_a MQTT::Protocol::IO::V5
+  end
+
+  it "raises PacketDecode (not TypeCastError) when the first packet is not CONNECT [MQTT-3.1.0-1]" do
+    mio = IO::Memory.new(2)
+    mio.write Bytes[0xC0, 0x00] # PINGREQ, a well-formed non-CONNECT packet
+    mio.rewind
+    boot = MQTT::Protocol::IO::V3.new(mio)
+    expect_raises(MQTT::Protocol::Error::PacketDecode, /must be CONNECT/) { boot.read_connect }
+  end
+
   it "accepts a client id longer than 255 bytes in v5" do
     long_id = "a" * 300
     connect = MQTT::Protocol::Connect.new(

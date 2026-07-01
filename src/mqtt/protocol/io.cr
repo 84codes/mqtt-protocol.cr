@@ -40,18 +40,28 @@ module MQTT
         end
       end
 
-      # Read the opening CONNECT off a fresh connection, detecting the protocol
-      # version it negotiates, and return it together with the versioned IO to
-      # use for every subsequent packet. This is the one place the version is
-      # discovered from the wire rather than chosen up front.
+      # Read the opening CONNECT off a fresh connection and return it with a
+      # versioned IO for every subsequent packet. Convenience wrapper: a server
+      # that rejects a bad CONNECT should use the instance `#read_connect`, which
+      # keeps an IO to frame the rejection CONNACK on.
       def self.read_connect(io : ::IO, max_packet_size : UInt32? = nil,
                             byte_format : ::IO::ByteFormat = ::IO::ByteFormat::NetworkEndian) : {Connect, IO}
-        # CONNECT's header up to the protocol-level byte is version-independent,
-        # and Connect.from_io reframes itself once the level is known, so any
-        # concrete IO can bootstrap the read.
-        boot = V3.new(io, max_packet_size, byte_format)
-        connect = boot.read_packet.as(Connect)
-        {connect, for(connect.version, io, max_packet_size, byte_format)}
+        V3.new(io, max_packet_size, byte_format).read_connect
+      end
+
+      # Read the opening CONNECT on this bootstrap IO (a v3 IO; CONNECT reveals
+      # the version on the wire) and return it with the IO reframed to that
+      # version. The tuple only rebinds on success, so the caller's boot IO
+      # survives a parse error, letting a rejecting server answer with a CONNACK:
+      #
+      #     io = MQTT::Protocol::IO::V3.new(socket, max)
+      #     connect, io = io.read_connect
+      #     # rescue Error::Connect -> io is still the boot IO, can send CONNACK
+      def read_connect : {Connect, IO}
+        # [MQTT-3.1.0-1]: the first packet MUST be a CONNECT.
+        connect = read_packet.as?(Connect) ||
+                  raise Error::PacketDecode.new("first packet must be CONNECT")
+        {connect, reframe(connect.version)}
       end
 
       # Return an IO framing for `version` over the same transport, or self if it

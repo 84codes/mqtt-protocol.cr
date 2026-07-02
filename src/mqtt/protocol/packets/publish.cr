@@ -9,9 +9,10 @@ module MQTT
       getter? dup, retain
 
       # The topic is stored as raw bytes: PUBLISH is the hot data-plane packet,
-      # and a broker routing/forwarding it never needs the decoded String. This
-      # skips a per-message allocation and UTF-8 validation pass. `topic` decodes
-      # to a String for convenience (back-compat); `topic_bytes` is the raw,
+      # and a broker routing/forwarding it never needs the decoded String. It
+      # is still validated (wildcards, U+0000, UTF-8 well-formedness) in one
+      # allocation-free byte scan - see validate_topic. `topic` decodes to a
+      # String for convenience (back-compat); `topic_bytes` is the raw,
       # allocation-free form the hot path should prefer.
       #
       # NOTE: despite looking like a plain getter, this allocates a new String
@@ -29,13 +30,35 @@ module MQTT
       def initialize(@topic : Bytes, @payload : Bytes, @packet_id : UInt16?, @dup : Bool,
                      @qos : UInt8, @retain : Bool, @properties : PublishProperties = PublishProperties.new)
         raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
-        if @topic.any? { |b| b == 0x23u8 || b == 0x2bu8 } # '#' / '+'
-          raise ArgumentError.new("Topic cannot contain wildcard")
-        end
+        validate_topic(@topic)
         raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
         raise ArgumentError.new("DUP must be 0 for QoS 0 messages") if dup? && qos.zero?
         # Empty topic is version-gated at decode (legal in v5 with a Topic
         # Alias), so it is not rejected here.
+      end
+
+      # Rejects wildcard bytes ('#'/'+', [MQTT-3.3.2-2]), U+0000
+      # ([MQTT-1.5.4-2]) and ill-formed UTF-8 ([MQTT-3.3.2-1] via
+      # [MQTT-1.5.4-1]). Topics are almost always pure ASCII, which one cheap
+      # byte scan fully validates without allocating; only a topic that
+      # actually contains non-ASCII bytes pays a String allocation for the
+      # stdlib's UTF-8 validation.
+      private def validate_topic(bytes : Bytes) : Nil
+        ascii = true
+        bytes.each do |b|
+          case b
+          when 0x23u8, 0x2Bu8 # '#' / '+'
+            raise ArgumentError.new("Topic cannot contain wildcard")
+          when 0x00u8
+            raise ArgumentError.new("Topic cannot contain U+0000")
+          else
+            ascii = false if b >= 0x80u8
+          end
+        end
+        return if ascii
+        unless String.new(bytes).valid_encoding?
+          raise ArgumentError.new("Topic must be well-formed UTF-8")
+        end
       end
 
       # Convenience for callers that hold the topic as a `String`; stores its

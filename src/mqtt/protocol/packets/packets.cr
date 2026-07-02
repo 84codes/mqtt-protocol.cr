@@ -42,13 +42,7 @@ module MQTT
 
         def remaining_length(version : MQTT::Protocol::Version) : UInt32
           return 2u32 unless version.v5?
-          if @reason_code.success? && @properties.empty?
-            2u32
-          elsif @properties.empty?
-            3u32
-          else
-            (3 + @properties.bytesize).to_u32
-          end
+          2u32 + MQTT::Protocol::IO.tail_bytesize(@reason_code.value, @properties)
         end
 
         def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)

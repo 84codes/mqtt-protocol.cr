@@ -48,13 +48,7 @@ module MQTT
       def remaining_length(version : Version) : UInt32
         # v3 DISCONNECT is always an empty packet.
         return 0u32 unless version.v5?
-        if @reason_code.normal_disconnection? && @properties.empty?
-          0u32
-        elsif @properties.empty?
-          1u32
-        else
-          (1 + @properties.bytesize).to_u32
-        end
+        IO.tail_bytesize(@reason_code.value, @properties)
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)

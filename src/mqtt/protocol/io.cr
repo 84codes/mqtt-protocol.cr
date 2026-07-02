@@ -327,6 +327,23 @@ module MQTT
         write_variable_byte_int(length)
       end
 
+      # Wire size of a v5 reason-code + properties tail, encoding the omission
+      # rule of 3.4.2.1 / 3.14.2.2 / 3.15.2.2: a zero (success/normal) reason
+      # with no properties is omitted entirely, and the properties section is
+      # omitted when empty and the reason is the last byte. The single source
+      # of truth for this rule - both the remaining_length arithmetic and the
+      # V5 writers derive from it, so the reported size can't drift from what
+      # is written.
+      def self.tail_bytesize(reason_value : UInt8, properties) : UInt32
+        if reason_value.zero? && properties.empty?
+          0u32
+        elsif properties.empty?
+          1u32
+        else
+          (1 + properties.bytesize).to_u32
+        end
+      end
+
       # Number of bytes a Variable Byte Integer of this value occupies on the
       # wire. The inverse of the byte-count thresholds, used to precompute a
       # packet's remaining_length without serialising it first.
@@ -437,19 +454,11 @@ module MQTT
 
         def write_ack(first_byte : UInt8, packet_id : UInt16, reason_value : UInt8, properties) : Nil
           write_byte(first_byte)
-          if reason_value.zero? && properties.empty?
-            write_remaining_length(2)
-            write_int(packet_id)
-          elsif properties.empty?
-            write_remaining_length(3)
-            write_int(packet_id)
-            write_byte(reason_value)
-          else
-            write_remaining_length(3 + properties.bytesize)
-            write_int(packet_id)
-            write_byte(reason_value)
-            properties.to_io(self)
-          end
+          tail = IO.tail_bytesize(reason_value, properties)
+          write_remaining_length(2 + tail)
+          write_int(packet_id)
+          write_byte(reason_value) unless tail.zero?
+          properties.to_io(self) if tail > 1
         end
 
         # As the ack tail but with no packet id: empty body => default reason +
@@ -464,16 +473,10 @@ module MQTT
 
         def write_reason_tail(first_byte : UInt8, reason_value : UInt8, properties) : Nil
           write_byte(first_byte)
-          if reason_value.zero? && properties.empty?
-            write_remaining_length(0)
-          elsif properties.empty?
-            write_remaining_length(1)
-            write_byte(reason_value)
-          else
-            write_remaining_length(1 + properties.bytesize)
-            write_byte(reason_value)
-            properties.to_io(self)
-          end
+          tail = IO.tail_bytesize(reason_value, properties)
+          write_remaining_length(tail)
+          write_byte(reason_value) unless tail.zero?
+          properties.to_io(self) if tail > 1
         end
 
         def validate_subscription_options(options : UInt8) : Nil

@@ -276,6 +276,9 @@ module MQTT
       abstract def write_connack_body(session_present : Bool, reason, properties) : Nil
       # Whether an empty PUBLISH topic is legal (v5, resolved via a Topic Alias).
       abstract def allow_empty_topic? : Bool
+      # Whether UNSUBACK carries a body beyond the packet id (v5: properties +
+      # per-topic reason codes; v3: a bare packet id).
+      abstract def unsuback_payload? : Bool
 
       def write_byte(b : UInt8)
         @io.write_byte b
@@ -448,6 +451,10 @@ module MQTT
         def allow_empty_topic? : Bool
           false
         end
+
+        def unsuback_payload? : Bool
+          false
+        end
       end
 
       # MQTT 5.0 framing: properties sections and reason codes throughout.
@@ -529,6 +536,10 @@ module MQTT
         end
 
         def allow_empty_topic? : Bool
+          true
+        end
+
+        def unsuback_payload? : Bool
           true
         end
       end

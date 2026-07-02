@@ -28,14 +28,10 @@ module MQTT
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
-        # The one genuine v3/v5 structural difference: v3 UNSUBACK is a bare
-        # packet id with no payload at all (not just a missing section), so a
-        # reason-code payload is rejected outright rather than parsed.
-        unless io.version.v5?
-          decode_assert remaining_length == 2, "invalid length"
-          return self.new(io.read_int)
-        end
         packet_id = io.read_int
+        # v3 UNSUBACK is a bare packet id with no payload at all; any v3
+        # payload bytes are rejected by the byte budget + finish_packet.
+        return self.new(packet_id) unless io.unsuback_payload?
         properties = io.read_properties(UnsubAckProperties)
         reason_codes = Array(ReasonCode).new
         while io.remaining_in_packet > 0
@@ -50,7 +46,7 @@ module MQTT
         io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length(io.version)
         io.write_int(packet_id)
-        return unless io.version.v5?
+        return unless io.unsuback_payload?
         io.write_properties(properties)
         reason_codes.each { |reason_code| io.write_byte(reason_code.value) }
       end

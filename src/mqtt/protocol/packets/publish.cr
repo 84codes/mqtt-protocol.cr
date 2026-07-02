@@ -77,7 +77,7 @@ module MQTT
       def to_io(io)
         # Mirror of the decode rule: an empty topic can only go on the wire in
         # v5 with a Topic Alias to resolve it (3.3.2.1 / [MQTT-3.3.2-6]).
-        if @topic.empty? && !(io.version.v5? && properties.topic_alias)
+        if @topic.empty? && !(io.allow_empty_topic? && properties.topic_alias)
           raise MQTT::Protocol::Error::PacketEncode.new("empty topic requires a v5 topic alias")
         end
         flags = 0u8

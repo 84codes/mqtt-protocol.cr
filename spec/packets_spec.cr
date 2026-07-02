@@ -1040,7 +1040,22 @@ describe MQTT::Protocol::Packet do
           io.write_byte 0b10110000u8 # UnsubAck
           io.write_remaining_length 0
           mio.rewind
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid length/) do
+          # Too short for the packet id: rejected by the packet byte budget.
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::IO::V3.new(mio).read_packet
+          end
+        end
+
+        it "raises if a v3 UNSUBACK carries payload bytes" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO::V3.new(mio)
+          io.write_byte 0b10110000u8 # UnsubAck
+          io.write_remaining_length 3
+          io.write_int 50u16
+          io.write_byte 0x00u8 # v3 UNSUBACK has no payload
+          mio.rewind
+          # Trailing byte: rejected by the dispatcher's finish_packet.
+          expect_raises(MQTT::Protocol::Error::ProtocolError, /trailing/) do
             MQTT::Protocol::IO::V3.new(mio).read_packet
           end
         end

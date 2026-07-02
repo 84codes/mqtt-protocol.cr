@@ -136,7 +136,7 @@ describe MQTT::Protocol::ConnackProperties do
     props = MQTT::Protocol::ConnackProperties.new(
       session_expiry_interval: 120u32,
       receive_maximum: 50u16,
-      maximum_qos: 2u8,
+      maximum_qos: 1u8, # only 0/1 are valid (3.2.2.3.4)
       retain_available: true,
       maximum_packet_size: 1_048_576u32,
       assigned_client_identifier: "auto-123",

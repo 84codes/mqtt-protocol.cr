@@ -12,6 +12,12 @@ module MQTT
     # :sub_id_list as the kind to declare the repeatable Subscription
     # Identifier array (PUBLISH only).
     #
+    # An optional 4th tuple element declares a value range; a decoded value
+    # outside it is a Protocol Error (0x82). This is where the spec's
+    # per-property rules ("It is a Protocol Error ... value 0") live, so every
+    # packet type enforces them in the generated decoder. :byte_bool
+    # implicitly requires 0/1.
+    #
     # User Property (0x26) is valid in every packet, so it is always present as
     # an ordered `user_properties : Array(StringPair)` and never listed in the
     # specs.
@@ -136,16 +142,25 @@ module MQTT
               end
               {% k = s[2] %}
               {% if k == :byte_bool %}
-                props.{{ s[0].id }} = io.read_byte != 0u8
+                val = io.read_byte
+                # A boolean property with a value other than 0 or 1 is a
+                # Protocol Error (3.1.2.11.5/3.1.2.11.6, 3.2.2.3.5, 3.3.2.3.2, ...).
+                unless val <= 1u8
+                  raise Error::ProtocolError.new(0x82u8, "property 0x#{id.to_s(16)} must be 0 or 1, got #{val}")
+                end
+                props.{{ s[0].id }} = val == 1u8
                 consumed += 1
               {% elsif k == :byte_int %}
-                props.{{ s[0].id }} = io.read_byte
+                val = io.read_byte
+                props.{{ s[0].id }} = val
                 consumed += 1
               {% elsif k == :two_byte_int %}
-                props.{{ s[0].id }} = io.read_int
+                val = io.read_int
+                props.{{ s[0].id }} = val
                 consumed += 2
               {% elsif k == :four_byte_int %}
-                props.{{ s[0].id }} = io.read_four_byte_int
+                val = io.read_four_byte_int
+                props.{{ s[0].id }} = val
                 consumed += 4
               {% elsif k == :string %}
                 str = io.read_string
@@ -160,6 +175,12 @@ module MQTT
                 props.{{ s[0].id }} = val
                 consumed += MQTT::Protocol::IO.variable_byte_int_size(val)
               {% end %}
+              {% if s[3] %}
+                # Declared value constraint: out of range is a Protocol Error.
+                unless ({{ s[3] }}).includes?(val)
+                  raise Error::ProtocolError.new(0x82u8, "property 0x#{id.to_s(16)} value #{val} out of range {{ s[3] }}")
+                end
+              {% end %}
             {% end %}
             when 0x26u8
               pair = io.read_string_pair
@@ -169,7 +190,7 @@ module MQTT
             when 0x0Bu8
               val = io.read_variable_byte_int
               # A Subscription Identifier has the range 1..268,435,455; 0 is a
-              # Protocol Error (3.3.2.3.8 / [MQTT-3.8.2-1]).
+              # Protocol Error (3.3.2.3.8; stated for SUBSCRIBE in 3.8.2.1.2).
               if val.zero?
                 raise Error::ProtocolError.new(0x82u8, "subscription identifier must not be 0")
               end
@@ -190,8 +211,8 @@ module MQTT
 
     define_properties(ConnectProperties,
       {:session_expiry_interval, 0x11, :four_byte_int},
-      {:receive_maximum, 0x21, :two_byte_int},
-      {:maximum_packet_size, 0x27, :four_byte_int},
+      {:receive_maximum, 0x21, :two_byte_int, 1..65535},           # 3.1.2.11.3: 0 is a Protocol Error
+      {:maximum_packet_size, 0x27, :four_byte_int, 1..4294967295}, # 3.1.2.11.4: 0 is a Protocol Error
       {:topic_alias_maximum, 0x22, :two_byte_int},
       {:request_response_information, 0x19, :byte_bool},
       {:request_problem_information, 0x17, :byte_bool},
@@ -210,10 +231,10 @@ module MQTT
 
     define_properties(ConnackProperties,
       {:session_expiry_interval, 0x11, :four_byte_int},
-      {:receive_maximum, 0x21, :two_byte_int},
-      {:maximum_qos, 0x24, :byte_int},
+      {:receive_maximum, 0x21, :two_byte_int, 1..65535}, # 3.2.2.3.3: 0 is a Protocol Error
+      {:maximum_qos, 0x24, :byte_int, 0..1},             # 3.2.2.3.4: only 0 or 1
       {:retain_available, 0x25, :byte_bool},
-      {:maximum_packet_size, 0x27, :four_byte_int},
+      {:maximum_packet_size, 0x27, :four_byte_int, 1..4294967295}, # 3.2.2.3.6: 0 is a Protocol Error
       {:assigned_client_identifier, 0x12, :string},
       {:topic_alias_maximum, 0x22, :two_byte_int},
       {:reason_string, 0x1F, :string},
@@ -230,7 +251,7 @@ module MQTT
     define_properties(PublishProperties,
       {:payload_format_indicator, 0x01, :byte_bool},
       {:message_expiry_interval, 0x02, :four_byte_int},
-      {:topic_alias, 0x23, :two_byte_int},
+      {:topic_alias, 0x23, :two_byte_int, 1..65535}, # 3.3.2.3.4: 0 is a Protocol Error
       {:response_topic, 0x08, :string},
       {:correlation_data, 0x09, :binary},
       {:content_type, 0x03, :string},
@@ -238,7 +259,8 @@ module MQTT
     )
 
     define_properties(SubscribeProperties,
-      {:subscription_identifier, 0x0B, :var_int},
+      # 3.8.2.1.2: 0 is a Protocol Error; the VBI reader bounds the upper end.
+      {:subscription_identifier, 0x0B, :var_int, 1..268435455},
     )
 
     define_properties(DisconnectProperties,

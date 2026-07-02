@@ -58,9 +58,15 @@ module MQTT
         else
           decode_assert dup == false, "DUP must be 0 for QoS 0 messages"
         end
-        # Empty topic is only legal in v5 (resolved via a Topic Alias).
-        decode_assert io.allow_empty_topic? || !topic.empty?, "empty publish topic"
         properties = io.read_properties(PublishProperties)
+        if topic.empty?
+          # A zero-length Topic Name is only legal on v5, and only when it is
+          # resolved via a Topic Alias (3.3.2.1 / [MQTT-3.3.2-6]).
+          decode_assert io.allow_empty_topic?, "empty publish topic"
+          unless properties.topic_alias
+            raise Error::ProtocolError.new(0x82u8, "empty topic without a topic alias")
+          end
+        end
         # The payload is whatever the packet has left.
         payload = io.read_bytes(io.remaining_in_packet)
         self.new(topic, payload, packet_id, dup, qos, retain, properties)
@@ -69,6 +75,11 @@ module MQTT
       end
 
       def to_io(io)
+        # Mirror of the decode rule: an empty topic can only go on the wire in
+        # v5 with a Topic Alias to resolve it (3.3.2.1 / [MQTT-3.3.2-6]).
+        if @topic.empty? && !(io.version.v5? && properties.topic_alias)
+          raise MQTT::Protocol::Error::PacketEncode.new("empty topic requires a v5 topic alias")
+        end
         flags = 0u8
         flags |= 0b0000_1000u8 if dup?
         flags |= 0b0000_0001u8 if retain?

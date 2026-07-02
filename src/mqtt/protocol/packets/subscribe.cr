@@ -62,12 +62,10 @@ module MQTT
         decode_assert remaining_length > 2, "protocol violation"
         packet_id = io.read_int
 
+        # The subscription-identifier-0 rejection (3.8.2.1.2) is declared in
+        # the SubscribeProperties spec table and enforced by the generated
+        # decoder.
         properties = io.read_properties(SubscribeProperties)
-        if (sid = properties.subscription_identifier) && sid.zero?
-          # [MQTT-3.3.2-9] / [MQTT-3.8.3-4]: a subscription identifier of 0 is a
-          # Protocol Error.
-          raise Error::ProtocolError.new(0x82u8, "subscription identifier must not be 0")
-        end
 
         topic_filters = Array(TopicFilter).new
         while io.remaining_in_packet > 0

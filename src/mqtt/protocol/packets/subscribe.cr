@@ -79,6 +79,12 @@ module MQTT
           retain_handling = (options & 0b0011_0000u8) >> 4
           topic_filters << TopicFilter.new(topic, qos, no_local, retain_as_published, retain_handling)
         end
+        # The payload MUST contain at least one Topic Filter / Options pair
+        # [MQTT-3.8.3-2]; on v5 an empty properties section otherwise slips
+        # a zero-filter packet past the length check.
+        if topic_filters.empty?
+          raise Error::ProtocolError.new(0x82u8, "SUBSCRIBE must contain at least one topic filter")
+        end
         self.new(topic_filters, packet_id, properties)
       rescue ex : ArgumentError
         raise Error::PacketDecode.new(ex.message)

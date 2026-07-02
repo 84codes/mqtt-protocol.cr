@@ -28,6 +28,10 @@ module MQTT
         while io.remaining_in_packet > 0
           topics << io.read_string
         end
+        # The payload MUST contain at least one Topic Filter [MQTT-3.10.3-2].
+        if topics.empty?
+          raise Error::ProtocolError.new(0x82u8, "UNSUBSCRIBE must contain at least one topic filter")
+        end
         self.new(topics, packet_id, properties)
       end
 

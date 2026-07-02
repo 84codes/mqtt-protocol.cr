@@ -291,3 +291,33 @@ describe MQTT::Protocol::UnsubAck do
     expect_raises(MQTT::Protocol::Error::PacketDecode) { decode_v5(bytes) }
   end
 end
+
+# 1.10: the SUBSCRIBE payload MUST contain at least one Topic Filter and
+# Subscription Options pair [MQTT-3.8.3-2]; same for UNSUBSCRIBE topic
+# filters [MQTT-3.10.3-2]. On v5 an empty properties section makes
+# remaining_length 3 pass the old `> 2` check with zero filters.
+describe "v5 empty subscription payloads" do
+  it "rejects a v5 SUBSCRIBE with no topic filters" do
+    # rem_len 3: packet id (00 01) + empty props (00), no filters.
+    bytes = Bytes[0x82, 0x03, 0x00, 0x01, 0x00]
+    mio = IO::Memory.new(bytes.size)
+    mio.write bytes
+    mio.rewind
+    ex = expect_raises(MQTT::Protocol::Error::ProtocolError) do
+      MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO::V5.new(mio))
+    end
+    ex.reason_code.should eq 0x82u8
+  end
+
+  it "rejects a v5 UNSUBSCRIBE with no topic filters" do
+    # rem_len 3: packet id (00 01) + empty props (00), no topics.
+    bytes = Bytes[0xA2, 0x03, 0x00, 0x01, 0x00]
+    mio = IO::Memory.new(bytes.size)
+    mio.write bytes
+    mio.rewind
+    ex = expect_raises(MQTT::Protocol::Error::ProtocolError) do
+      MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO::V5.new(mio))
+    end
+    ex.reason_code.should eq 0x82u8
+  end
+end

@@ -273,8 +273,11 @@ module MQTT
       # Interpret a SUBACK payload byte: v3 allows only the granted-QoS values
       # and 0x80 (Failure); v5 has the full reason-code set.
       abstract def read_suback_reason(byte : UInt8) : SubAck::ReasonCode
-      # Write the CONNACK body after the fixed header + remaining length.
-      abstract def write_connack_body(session_present : Bool, reason, properties) : Nil
+      # Write the whole CONNACK. Owns the entire write so the v3 impl can
+      # resolve the return-code mapping BEFORE any byte goes on the wire - an
+      # unmappable reason must raise cleanly, not leave a truncated packet.
+      # `remaining_length` is computed by the packet (single length source).
+      abstract def write_connack(remaining_length : UInt32, session_present : Bool, reason, properties) : Nil
       # Whether an empty PUBLISH topic is legal (v5, resolved via a Topic Alias).
       abstract def allow_empty_topic? : Bool
       # Whether UNSUBACK carries a body beyond the packet id (v5: properties +
@@ -443,10 +446,13 @@ module MQTT
           SubAck::ReasonCode.new(byte)
         end
 
-        def write_connack_body(session_present : Bool, reason, properties) : Nil
-          write_byte(session_present ? 1u8 : 0u8)
+        def write_connack(remaining_length : UInt32, session_present : Bool, reason, properties) : Nil
+          # Resolve the mapping before any byte goes on the wire.
           return_code = reason.to_v3_return_code ||
                         raise Error::PacketEncode.new("no v3 return code for #{reason}")
+          write_byte(Connack::TYPE << 4)
+          write_remaining_length(remaining_length)
+          write_byte(session_present ? 1u8 : 0u8)
           write_byte(return_code.value)
         end
 
@@ -519,7 +525,9 @@ module MQTT
             raise Error::ProtocolError.new(0x81u8, "invalid suback reason code #{byte}")
         end
 
-        def write_connack_body(session_present : Bool, reason, properties) : Nil
+        def write_connack(remaining_length : UInt32, session_present : Bool, reason, properties) : Nil
+          write_byte(Connack::TYPE << 4)
+          write_remaining_length(remaining_length)
           write_byte(session_present ? 1u8 : 0u8)
           write_byte(reason.value)
           properties.to_io(self)

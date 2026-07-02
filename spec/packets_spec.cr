@@ -1233,3 +1233,17 @@ describe MQTT::Protocol::Packet do
     end
   end
 end
+
+# 1.4: an unmappable v5 reason on a v3 CONNACK must raise BEFORE any byte
+# goes on the wire - a partial fixed header would desync the stream.
+describe "v3 CONNACK with unmappable reason" do
+  it "raises before writing anything" do
+    mio = IO::Memory.new
+    io = MQTT::Protocol::IO::V3.new(mio)
+    connack = MQTT::Protocol::Connack.new(false, MQTT::Protocol::Connack::ReasonCode::ServerBusy)
+    expect_raises(MQTT::Protocol::Error::PacketEncode, /no v3 return code/) do
+      io.write_packet(connack)
+    end
+    mio.size.should eq 0
+  end
+end

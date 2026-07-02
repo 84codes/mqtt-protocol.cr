@@ -106,9 +106,7 @@ module MQTT
       end
 
       def to_io(io)
-        io.write_byte(TYPE << 4)
-        io.write_remaining_length remaining_length(io.version)
-        io.write_connack_body(session_present?, reason_code, properties)
+        io.write_connack(remaining_length(io.version), session_present?, reason_code, properties)
       end
     end
   end

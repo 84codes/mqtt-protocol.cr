@@ -14,16 +14,25 @@ module MQTT
         PacketIdentifierInUse       = 0x91
       end
 
-      getter packet_id, reason_codes, properties
+      getter packet_id, properties
 
-      def initialize(@packet_id : UInt16, @reason_codes : Array(ReasonCode) = [] of ReasonCode,
+      # Nil-backed and lazily allocated: a v3 UNSUBACK (no payload) allocates
+      # no array. Empty normalises to nil so value equality holds.
+      @reason_codes : Array(ReasonCode)?
+
+      def reason_codes : Array(ReasonCode)
+        @reason_codes ||= [] of ReasonCode
+      end
+
+      def initialize(@packet_id : UInt16, reason_codes : Array(ReasonCode)? = nil,
                      @properties : UnsubAckProperties = UnsubAckProperties.new)
+        @reason_codes = reason_codes.try { |a| a.empty? ? nil : a }
       end
 
       def remaining_length(version : MQTT::Protocol::Version) : UInt32
         # v3 UNSUBACK has no payload, just the packet id.
         return 2u32 unless version.v5?
-        (2 + properties.bytesize + reason_codes.size).to_u32
+        (2 + properties.bytesize + (@reason_codes.try(&.size) || 0)).to_u32
       end
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
@@ -48,7 +57,7 @@ module MQTT
         io.write_int(packet_id)
         return unless io.unsuback_payload?
         io.write_properties(properties)
-        reason_codes.each { |reason_code| io.write_byte(reason_code.value) }
+        @reason_codes.try &.each { |reason_code| io.write_byte(reason_code.value) }
       end
     end
   end

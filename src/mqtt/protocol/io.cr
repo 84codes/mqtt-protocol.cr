@@ -244,12 +244,13 @@ module MQTT
         raise NotImplementedError.new("read_properties")
       end
 
-      # The PUBACK/PUBREC/PUBREL/PUBCOMP tail after the packet id. Returns the
-      # raw reason byte (nil when omitted) and the parsed properties. The v3
-      # impl asserts the bare-packet-id length, making the dropped-gate bug (a v3
-      # PUBREL/PUBCOMP misparsed as v5) structurally impossible.
+      # The PUBACK/PUBREC/PUBREL/PUBCOMP tail after the packet id: exactly a
+      # reason tail offset by the 2 packet-id bytes (the caller asserts
+      # remaining_length >= 2 before reading the id), so both versions share
+      # one reason-tail parser - v3 asserts an empty tail, making the
+      # dropped-gate bug (a v3 PUBREL misparsed as v5) structurally impossible.
       def read_ack_tail(remaining_length : UInt32, properties_klass : P.class) : {UInt8?, P} forall P
-        raise NotImplementedError.new("read_ack_tail")
+        read_reason_tail(remaining_length - 2, properties_klass)
       end
 
       # The optional reason byte + properties tail of DISCONNECT / AUTH. Same
@@ -391,13 +392,6 @@ module MQTT
         def write_properties(properties) : Nil
         end
 
-        def read_ack_tail(remaining_length : UInt32, properties_klass : P.class) : {UInt8?, P} forall P
-          unless remaining_length == 2
-            raise Error::PacketDecode.new "invalid length #{remaining_length} for v3 ack"
-          end
-          {nil, properties_klass.new}
-        end
-
         def write_ack(first_byte : UInt8, packet_id : UInt16, reason_value : UInt8, properties) : Nil
           write_byte(first_byte)
           write_remaining_length(2)
@@ -477,18 +471,6 @@ module MQTT
 
         def write_properties(properties) : Nil
           properties.to_io(self)
-        end
-
-        # Omission rules 3.4.2.1: reason 0x00 + no properties => bare packet id
-        # (remaining length 2); reason set but no properties => length 3.
-        def read_ack_tail(remaining_length : UInt32, properties_klass : P.class) : {UInt8?, P} forall P
-          return {nil, properties_klass.new} if remaining_length <= 2
-          reason = read_byte
-          return {reason, properties_klass.new} if remaining_length == 3
-          # The section must consume the rest of the packet exactly: an overrun
-          # is caught by the byte budget, leftovers by the dispatcher's
-          # finish_packet.
-          {reason, properties_klass.from_io(self, remaining_in_packet)}
         end
 
         def write_ack(first_byte : UInt8, packet_id : UInt16, reason_value : UInt8, properties) : Nil

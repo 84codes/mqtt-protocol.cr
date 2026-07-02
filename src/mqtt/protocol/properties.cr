@@ -37,24 +37,50 @@ module MQTT
         {% for s in singles %}
         property {{ s[0].id }} : {{ types[s[2]] }}?
         {% end %}
-        property user_properties : Array(StringPair)
+
+        # The repeatable properties are nil-backed and lazily allocated, so
+        # decoding or constructing a packet without them allocates nothing
+        # (the common case on the hot path); the getter materialises an array
+        # on first use.
+        @user_properties : Array(StringPair)?
+
+        def user_properties : Array(StringPair)
+          @user_properties ||= [] of StringPair
+        end
+
+        def user_properties=(@user_properties : Array(StringPair)?)
+        end
+
         {% if has_sub_ids %}
-        property subscription_identifiers : Array(UInt32)
+        @subscription_identifiers : Array(UInt32)?
+
+        def subscription_identifiers : Array(UInt32)
+          @subscription_identifiers ||= [] of UInt32
+        end
+
+        def subscription_identifiers=(@subscription_identifiers : Array(UInt32)?)
+        end
         {% end %}
 
         def initialize(
           {% for s in singles %}
           @{{ s[0].id }} : {{ types[s[2]] }}? = nil,
           {% end %}
-          @user_properties : Array(StringPair) = [] of StringPair,
+          user_properties : Array(StringPair)? = nil,
           {% if has_sub_ids %}
-          @subscription_identifiers : Array(UInt32) = [] of UInt32,
+          subscription_identifiers : Array(UInt32)? = nil,
           {% end %}
         )
+          # Empty normalises to nil so a constructed instance compares equal
+          # to a decoded one (struct value equality is over the raw fields).
+          @user_properties = user_properties.try { |a| a.empty? ? nil : a }
+          {% if has_sub_ids %}
+          @subscription_identifiers = subscription_identifiers.try { |a| a.empty? ? nil : a }
+          {% end %}
         end
 
         def empty? : Bool
-          {% for s in singles %}@{{ s[0].id }}.nil? && {% end %}user_properties.empty?{% if has_sub_ids %} && subscription_identifiers.empty?{% end %}
+          {% for s in singles %}@{{ s[0].id }}.nil? && {% end %}(@user_properties.try(&.empty?) != false){% if has_sub_ids %} && (@subscription_identifiers.try(&.empty?) != false){% end %}
         end
 
         # Size of the property body, excluding its own length prefix.
@@ -73,12 +99,16 @@ module MQTT
             {% end %}
           end
           {% end %}
-          user_properties.each do |(key, value)|
-            size += 1 + 2 + key.bytesize + 2 + value.bytesize
+          if up = @user_properties
+            up.each do |(key, value)|
+              size += 1 + 2 + key.bytesize + 2 + value.bytesize
+            end
           end
           {% if has_sub_ids %}
-          subscription_identifiers.each do |sub_id|
-            size += 1 + MQTT::Protocol::IO.variable_byte_int_size(sub_id)
+          if sub_ids = @subscription_identifiers
+            sub_ids.each do |sub_id|
+              size += 1 + MQTT::Protocol::IO.variable_byte_int_size(sub_id)
+            end
           end
           {% end %}
           size
@@ -106,14 +136,18 @@ module MQTT
             {% end %}
           end
           {% end %}
-          user_properties.each do |(key, value)|
-            io.write_byte 0x26u8
-            io.write_string_pair(key, value)
+          if up = @user_properties
+            up.each do |(key, value)|
+              io.write_byte 0x26u8
+              io.write_string_pair(key, value)
+            end
           end
           {% if has_sub_ids %}
-          subscription_identifiers.each do |sub_id|
-            io.write_byte 0x0Bu8
-            io.write_variable_byte_int(sub_id)
+          if sub_ids = @subscription_identifiers
+            sub_ids.each do |sub_id|
+              io.write_byte 0x0Bu8
+              io.write_variable_byte_int(sub_id)
+            end
           end
           {% end %}
         end
@@ -275,10 +309,13 @@ module MQTT
       {:reason_string, 0x1F, :string},
     )
 
-    # Ack-packet properties: Reason String + User Property (3.4.2.2 etc.).
-    define_properties(PubAckProperties, {:reason_string, 0x1F, :string})
-    define_properties(SubAckProperties, {:reason_string, 0x1F, :string})
-    define_properties(UnsubAckProperties, {:reason_string, 0x1F, :string})
+    # Ack-packet properties: Reason String + User Property (3.4.2.2, 3.9.2.1,
+    # 3.11.2.1). One generated struct serves all six ack packets; the aliases
+    # keep the per-packet names in the public API.
+    define_properties(AckProperties, {:reason_string, 0x1F, :string})
+    alias PubAckProperties = AckProperties
+    alias SubAckProperties = AckProperties
+    alias UnsubAckProperties = AckProperties
 
     # Unsubscribe carries only User Property (3.10.2.1).
     define_properties(UnsubscribeProperties)

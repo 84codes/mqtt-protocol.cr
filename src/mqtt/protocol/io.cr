@@ -263,8 +263,15 @@ module MQTT
       abstract def write_reason_tail(first_byte : UInt8, reason_value : UInt8, properties) : Nil
       # Validate a SUBSCRIBE option byte's version-reserved bits ([MQTT-3.8.3-5]).
       abstract def validate_subscription_options(options : UInt8) : Nil
+      # Reject packet types that do not exist in this version, before any body
+      # bytes are read. Keeps the version-blind dispatcher from parsing
+      # v5-only packets on a v3 connection.
+      abstract def validate_packet_type(type : UInt8) : Nil
       # Interpret a CONNACK code byte: a v3 return code or a v5 reason code.
       abstract def read_connack_reason(byte : UInt8)
+      # Interpret a SUBACK payload byte: v3 allows only the granted-QoS values
+      # and 0x80 (Failure); v5 has the full reason-code set.
+      abstract def read_suback_reason(byte : UInt8) : SubAck::ReasonCode
       # Write the CONNACK body after the fixed header + remaining length.
       abstract def write_connack_body(session_present : Bool, reason, properties) : Nil
       # Whether an empty PUBLISH topic is legal (v5, resolved via a Topic Alias).
@@ -407,11 +414,28 @@ module MQTT
           end
         end
 
+        def validate_packet_type(type : UInt8) : Nil
+          # Type 15 (AUTH) is reserved in v3 and MUST be treated as a
+          # protocol violation [MQTT-2.2.1].
+          if type == Auth::TYPE
+            raise Error::PacketDecode.new "invalid packet type #{type}"
+          end
+        end
+
         def read_connack_reason(byte : UInt8)
           unless byte < 6
             raise Error::PacketDecode.new "invalid return code: #{byte}"
           end
           Connack::ReasonCode.from_v3_return_code(Connack::ReturnCode.new(byte))
+        end
+
+        def read_suback_reason(byte : UInt8) : SubAck::ReasonCode
+          # v3.1.1 SUBACK return codes are 0-2 (granted QoS) or 0x80 Failure
+          # [MQTT-3.9.3-2]; 0x80 maps onto the v5 UnspecifiedError member.
+          unless byte <= 2 || byte == 0x80
+            raise Error::PacketDecode.new "invalid suback return code #{byte}"
+          end
+          SubAck::ReasonCode.new(byte)
         end
 
         def write_connack_body(session_present : Bool, reason, properties) : Nil
@@ -485,9 +509,17 @@ module MQTT
           end
         end
 
+        def validate_packet_type(type : UInt8) : Nil
+        end
+
         def read_connack_reason(byte : UInt8)
           Connack::ReasonCode.from_value?(byte) ||
             raise Error::ProtocolError.new(0x81u8, "invalid connack reason code #{byte}")
+        end
+
+        def read_suback_reason(byte : UInt8) : SubAck::ReasonCode
+          SubAck::ReasonCode.from_value?(byte) ||
+            raise Error::ProtocolError.new(0x81u8, "invalid suback reason code #{byte}")
         end
 
         def write_connack_body(session_present : Bool, reason, properties) : Nil

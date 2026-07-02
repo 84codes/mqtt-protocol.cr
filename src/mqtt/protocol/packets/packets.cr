@@ -83,6 +83,7 @@ module MQTT
       protected def self.read_body(io : MQTT::Protocol::IO, first_byte : UInt8) : Packet
         type = first_byte >> 4
         flags = first_byte & 0b00001111
+        io.validate_packet_type(type)
         remaining_length = io.read_remaining_length
         # Every read primitive charges against this budget, so no codec can
         # read past the packet boundary; finish_packet then rejects a codec

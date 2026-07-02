@@ -872,7 +872,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte(5u8)
           mio.rewind
 
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid suback reason code 5/) do
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid suback return code 5/) do
             MQTT::Protocol::IO::V3.new(mio).read_packet
           end
         end

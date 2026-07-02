@@ -1,20 +1,29 @@
 module MQTT
   module Protocol
     class Error < Exception
+      # Any decode failure carries the v5 reason code a consumer should
+      # answer with (in a CONNACK or DISCONNECT, then close). Defaults to
+      # 0x81 Malformed Packet (spec 2.4), which covers every plain parse
+      # failure; use ProtocolError for violations that need a more specific
+      # code. A v5 consumer rescues this one type and reads reason_code
+      # uniformly; v3 consumers just close, ignoring the code.
       class PacketDecode < Error
+        getter reason_code : UInt8
+
+        def initialize(message = nil, @reason_code : UInt8 = 0x81u8)
+          super(message)
+        end
       end
 
       class PacketEncode < Error
       end
 
-      # A decode violation that a v5 consumer must answer with a specific
-      # reason code (then close). Subclasses PacketDecode so existing v3
-      # consumers, which just close on PacketDecode, keep working unchanged.
+      # A decode violation answered with a specific (non-0x81) reason code.
+      # Subclasses PacketDecode so existing v3 consumers, which just close
+      # on PacketDecode, keep working unchanged.
       class ProtocolError < PacketDecode
-        getter reason_code : UInt8
-
-        def initialize(@reason_code : UInt8, message = "protocol error")
-          super(message)
+        def initialize(reason_code : UInt8, message = "protocol error")
+          super(message, reason_code)
         end
       end
 

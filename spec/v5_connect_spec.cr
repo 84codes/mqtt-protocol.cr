@@ -501,3 +501,40 @@ describe MQTT::Protocol::Connack do
     end
   end
 end
+
+# 1.3: MQTT 5.0 allows a Password without a User Name (3.1.2.9); the MUST-NOT
+# is v3.1.1-only ([MQTT-3.1.2-22]). Both directions must honor it: decode
+# accepts flag bit 6 without bit 7, and encode actually writes the password.
+describe "v5 CONNECT password without username" do
+  it "round-trips a v5 CONNECT carrying only a password" do
+    connect = MQTT::Protocol::Connect.new(
+      client_id: "pw-only",
+      clean_session: true,
+      keepalive: 30u16,
+      username: nil,
+      password: "token".to_slice,
+      will: nil,
+      version: MQTT::Protocol::Version::V5,
+    )
+    mio = IO::Memory.new
+    MQTT::Protocol::IO::V5.new(mio).write_packet(connect)
+    mio.rewind
+    decoded, _io = MQTT::Protocol::IO.read_connect(mio)
+    decoded.username.should be_nil
+    decoded.password.should eq "token".to_slice
+  end
+
+  it "rejects password-without-username at construction for v3" do
+    expect_raises(ArgumentError, /username/) do
+      MQTT::Protocol::Connect.new(
+        client_id: "pw-only",
+        clean_session: true,
+        keepalive: 30u16,
+        username: nil,
+        password: "token".to_slice,
+        will: nil,
+        version: MQTT::Protocol::Version::V3_1_1,
+      )
+    end
+  end
+end

@@ -19,6 +19,11 @@ module MQTT
 
       def initialize(@client_id, @clean_session, @keepalive, @username, @password, @will,
                      @version : Version = Version::V3_1_1, @properties = ConnectProperties.new)
+        # v5 allows a Password without a User Name (3.1.2.9); v3.1.1 forbids
+        # it ([MQTT-3.1.2-22]), and there is no flag encoding for it in v3.
+        if @password && @username.nil? && !@version.v5?
+          raise ArgumentError.new("password without username requires MQTT 5.0")
+        end
       end
 
       # Return a copy with the given fields changed and the rest carried over, so
@@ -45,9 +50,9 @@ module MQTT
         end
         if u = @username
           len += 2 + u.bytesize
-          if pwd = @password
-            len += 2 + pwd.size
-          end
+        end
+        if pwd = @password
+          len += 2 + pwd.size
         end
         len.to_u32
       end
@@ -91,7 +96,11 @@ module MQTT
         has_password = connect_flags.bit(6) == 1
         has_username = connect_flags.bit(7) == 1
 
-        decode_assert has_username || !has_password, "Password cannot be set without a username"
+        # v3.1.1 forbids the password flag without the username flag
+        # ([MQTT-3.1.2-22]); v5 explicitly allows it (3.1.2.9).
+        unless version.v5?
+          decode_assert has_username || !has_password, "Password cannot be set without a username"
+        end
 
         keepalive = io.read_int
 
@@ -138,12 +147,10 @@ module MQTT
           connect_flags |= 0b0010_0000u8 if w.retain?
           connect_flags |= ((w.qos & 0b0000_0011u8) << 3)
         end
-        if u = username
-          connect_flags |= 0b1000_0000u8
-          if password
-            connect_flags |= 0b0100_0000u8
-          end
-        end
+        connect_flags |= 0b1000_0000u8 if username
+        # Password can be present without a username on v5 (3.1.2.9); the
+        # constructor rejects that combination for v3.
+        connect_flags |= 0b0100_0000u8 if password
         connect_flags |= 0b0000_0010u8 if clean_session?
         io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length(@version)
@@ -158,9 +165,9 @@ module MQTT
         end
         if u = username
           io.write_string u
-          if pwd = password
-            io.write_bytes pwd
-          end
+        end
+        if pwd = password
+          io.write_bytes pwd
         end
       end
     end

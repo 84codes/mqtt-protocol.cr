@@ -90,27 +90,38 @@ module MQTT
         type = first_byte >> 4
         flags = first_byte & 0b00001111
         remaining_length = io.read_remaining_length
-        case type
-        when Connect::TYPE     then Connect.from_io(io, flags, remaining_length)
-        when Connack::TYPE     then Connack.from_io(io, flags, remaining_length)
-        when Publish::TYPE     then Publish.from_io(io, flags, remaining_length)
-        when PubAck::TYPE      then PubAck.from_io(io, flags, remaining_length)
-        when PubRec::TYPE      then PubRec.from_io(io, flags, remaining_length)
-        when PubRel::TYPE      then PubRel.from_io(io, flags, remaining_length)
-        when PubComp::TYPE     then PubComp.from_io(io, flags, remaining_length)
-        when Subscribe::TYPE   then Subscribe.from_io(io, flags, remaining_length)
-        when SubAck::TYPE      then SubAck.from_io(io, flags, remaining_length)
-        when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
-        when UnsubAck::TYPE    then UnsubAck.from_io(io, flags, remaining_length)
-        when PingReq::TYPE     then PingReq.from_io(io, flags, remaining_length)
-        when PingResp::TYPE    then PingResp.from_io(io, flags, remaining_length)
-        when Disconnect::TYPE  then Disconnect.from_io(io, flags, remaining_length)
-        when Auth::TYPE        then Auth.from_io(io, flags, remaining_length)
-        else
-          raise Error::PacketDecode.new "invalid packet type #{type.to_u8}"
-        end
+        # Every read primitive charges against this budget, so no codec can
+        # read past the packet boundary; finish_packet then rejects a codec
+        # that consumed too little. Together they enforce [MQTT-2.1.4] framing
+        # integrity centrally instead of per packet type.
+        io.start_packet(remaining_length)
+        packet = case type
+                 when Connect::TYPE     then Connect.from_io(io, flags, remaining_length)
+                 when Connack::TYPE     then Connack.from_io(io, flags, remaining_length)
+                 when Publish::TYPE     then Publish.from_io(io, flags, remaining_length)
+                 when PubAck::TYPE      then PubAck.from_io(io, flags, remaining_length)
+                 when PubRec::TYPE      then PubRec.from_io(io, flags, remaining_length)
+                 when PubRel::TYPE      then PubRel.from_io(io, flags, remaining_length)
+                 when PubComp::TYPE     then PubComp.from_io(io, flags, remaining_length)
+                 when Subscribe::TYPE   then Subscribe.from_io(io, flags, remaining_length)
+                 when SubAck::TYPE      then SubAck.from_io(io, flags, remaining_length)
+                 when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
+                 when UnsubAck::TYPE    then UnsubAck.from_io(io, flags, remaining_length)
+                 when PingReq::TYPE     then PingReq.from_io(io, flags, remaining_length)
+                 when PingResp::TYPE    then PingResp.from_io(io, flags, remaining_length)
+                 when Disconnect::TYPE  then Disconnect.from_io(io, flags, remaining_length)
+                 when Auth::TYPE        then Auth.from_io(io, flags, remaining_length)
+                 else
+                   raise Error::PacketDecode.new "invalid packet type #{type.to_u8}"
+                 end
+        io.finish_packet
+        packet
       rescue ex : ::IO::EOFError
         raise Error::PacketDecode.new "truncated packet"
+      ensure
+        # Also on error paths, so a stale budget never charges the next
+        # packet's header on a reused IO.
+        io.abort_packet
       end
     end
 

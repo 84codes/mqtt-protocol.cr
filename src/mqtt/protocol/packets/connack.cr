@@ -99,13 +99,9 @@ module MQTT
         session_present = (connack_flags & 1u8) > 0
 
         reason = io.read_connack_reason(io.read_byte)
-        # Bytes left after the 1-byte flags + 1-byte reason. v3 has no property
-        # section (avail must be 0); v5 must consume avail exactly.
-        avail = remaining_length - 2
-        properties, consumed = io.read_properties(ConnackProperties, avail)
-        unless consumed == avail
-          raise MQTT::Protocol::Error::ProtocolError.new(0x81u8, "connack properties length mismatch")
-        end
+        # v3 has no property section and v5 must consume the rest of the packet
+        # exactly; both are enforced by the byte budget + finish_packet.
+        properties = io.read_properties(ConnackProperties)
         self.new(session_present, reason, properties)
       end
 

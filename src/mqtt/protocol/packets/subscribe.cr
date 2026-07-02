@@ -62,9 +62,7 @@ module MQTT
         decode_assert remaining_length > 2, "protocol violation"
         packet_id = io.read_int
 
-        bytes_to_read = io.consume(remaining_length, 2)
-        properties, consumed = io.read_properties(SubscribeProperties, bytes_to_read)
-        bytes_to_read = io.consume(bytes_to_read, consumed)
+        properties = io.read_properties(SubscribeProperties)
         if (sid = properties.subscription_identifier) && sid.zero?
           # [MQTT-3.3.2-9] / [MQTT-3.8.3-4]: a subscription identifier of 0 is a
           # Protocol Error.
@@ -72,8 +70,8 @@ module MQTT
         end
 
         topic_filters = Array(TopicFilter).new
-        while bytes_to_read > 0
-          topic = io.read_string(remaining: bytes_to_read)
+        while io.remaining_in_packet > 0
+          topic = io.read_string
           options = io.read_byte
           qos = options & 0b0000_0011u8
           decode_assert qos < 3, "Malformed packet"
@@ -82,8 +80,6 @@ module MQTT
           retain_as_published = options.bit(3) == 1
           retain_handling = (options & 0b0011_0000u8) >> 4
           topic_filters << TopicFilter.new(topic, qos, no_local, retain_as_published, retain_handling)
-          # 2 is UInt16 prefix topic length, the topic bytesize, 1 is the options byte
-          bytes_to_read = io.consume(bytes_to_read, 2 + topic.bytesize + 1)
         end
         self.new(topic_filters, packet_id, properties)
       rescue ex : ArgumentError

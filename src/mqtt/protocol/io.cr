@@ -23,20 +23,32 @@ module MQTT
       # so it is immutable for the lifetime of the connection.
       abstract def version : Version
 
+      # Bytes left to read in the current inbound packet, `nil` outside a
+      # packet read. A mutable box (not a plain ivar) so a CONNECT `reframe`
+      # mid-packet hands the same budget to the new IO and the dispatcher's
+      # final check sees every byte the reframed IO consumed.
+      class Budget
+        property remaining : UInt32? = nil
+      end
+
       @max_packet_size : UInt32
+      @budget : Budget
 
       def initialize(@io : ::IO, max_packet_size : UInt32? = nil,
-                     @byte_format : ::IO::ByteFormat = ::IO::ByteFormat::NetworkEndian)
+                     @byte_format : ::IO::ByteFormat = ::IO::ByteFormat::NetworkEndian,
+                     budget : Budget? = nil)
         @max_packet_size = max_packet_size || MAX_PAYLOAD_SIZE
+        @budget = budget || Budget.new
       end
 
       # Build the IO that frames for `version` over the same transport.
       def self.for(version : Version, io : ::IO, max_packet_size : UInt32? = nil,
-                   byte_format : ::IO::ByteFormat = ::IO::ByteFormat::NetworkEndian) : IO
+                   byte_format : ::IO::ByteFormat = ::IO::ByteFormat::NetworkEndian,
+                   budget : Budget? = nil) : IO
         if version.v5?
-          V5.new(io, max_packet_size, byte_format)
+          V5.new(io, max_packet_size, byte_format, budget)
         else
-          V3.new(io, max_packet_size, byte_format)
+          V3.new(io, max_packet_size, byte_format, budget)
         end
       end
 
@@ -65,10 +77,11 @@ module MQTT
       end
 
       # Return an IO framing for `version` over the same transport, or self if it
-      # already matches. Used by CONNECT, which establishes the version mid-read.
+      # already matches. Used by CONNECT, which establishes the version mid-read;
+      # the packet byte budget is shared so the switch happens mid-packet.
       def reframe(version : Version) : IO
         return self if version == self.version
-        IO.for(version, @io, @max_packet_size, @byte_format)
+        IO.for(version, @io, @max_packet_size, @byte_format, @budget)
       end
 
       forward_missing_to @io
@@ -92,23 +105,68 @@ module MQTT
         packet.bytesize(version)
       end
 
+      # --- packet byte budget ------------------------------------------------
+      #
+      # `Packet.read_body` starts the budget with the packet's remaining length;
+      # every read primitive then charges the bytes it is about to read, so no
+      # parse - present or future - can read past the packet boundary
+      # ([MQTT-2.1.4]-style framing integrity, enforced structurally instead of
+      # per codec). These three are for the dispatcher; codecs never call them.
+
+      def start_packet(remaining_length : UInt32) : Nil
+        @budget.remaining = remaining_length
+      end
+
+      # Reject a packet whose codec consumed fewer bytes than the declared
+      # remaining length: the leftovers would desync the next packet's header.
+      def finish_packet : Nil
+        if (remaining = @budget.remaining) && remaining > 0
+          raise Error::ProtocolError.new(0x81u8, "packet has #{remaining} trailing bytes")
+        end
+      end
+
+      # Deactivate the budget, also on error paths, so a stale budget never
+      # charges the next packet's header.
+      def abort_packet : Nil
+        @budget.remaining = nil
+      end
+
+      # Bytes left to read in the current packet (0 outside a packet read).
+      def remaining_in_packet : UInt32
+        @budget.remaining || 0u32
+      end
+
+      # Charge `n` bytes against the current packet's budget BEFORE reading
+      # them, raising Malformed Packet (0x81) when the packet has fewer bytes
+      # left - on a streaming socket an unbounded read would otherwise block
+      # waiting for bytes that belong to a later packet (or never arrive).
+      # Inactive (nil budget) outside a packet read.
+      private def charge(n : Int) : Nil
+        if remaining = @budget.remaining
+          if n > remaining
+            raise Error::ProtocolError.new(0x81u8, "field of #{n} bytes exceeds #{remaining} bytes left in packet")
+          end
+          @budget.remaining = remaining - n.to_u32
+        end
+      end
+
       # Underlying read that returns nil at a clean end-of-stream (vs raising),
       # so the packet dispatcher can tell "connection closed" from "truncated
-      # packet".
+      # packet". Uncharged: only used for the fixed header's first byte, before
+      # a packet is committed.
       def read_byte? : UInt8?
         @io.read_byte
       end
 
       def read_byte
+        charge(1)
         @io.read_byte || raise ::IO::EOFError.new
       end
 
-      def read_string(len : UInt16? = nil, remaining : Int? = nil)
-        if len.nil?
-          len = read_int
-          check_field_within(len, remaining)
-        end
+      def read_string(len : UInt16? = nil)
+        len = read_int if len.nil?
         raise Error::PacketTooLarge.new(@max_packet_size, len) if len > @max_packet_size
+        charge(len)
         str = @io.read_string(len)
         if str.includes?('\u0000') || !str.valid_encoding?
           raise MQTT::Protocol::Error::PacketDecode.new "Illformed UTF-8 string"
@@ -117,17 +175,18 @@ module MQTT
       end
 
       def read_int
+        charge(2)
         UInt16.from_io(@io, @byte_format)
       end
 
       def read_four_byte_int : UInt32
+        charge(4)
         UInt32.from_io(@io, @byte_format)
       end
 
-      def read_string_pair(remaining : Int? = nil) : {String, String}
-        key = read_string(remaining: remaining)
-        # The value's prefix + bytes must fit in what's left after the key.
-        value = read_string(remaining: remaining ? remaining - 2 - key.bytesize : nil)
+      def read_string_pair : {String, String}
+        key = read_string
+        value = read_string
         {key, value}
       end
 
@@ -140,6 +199,7 @@ module MQTT
         value : UInt32 = 0
         bytes_read = 0
         loop do
+          charge(1)
           b = @io.read_byte || raise ::IO::EOFError.new
           bytes_read += 1
           value += (b.to_u32 & 127u32) * multiplier
@@ -159,41 +219,13 @@ module MQTT
         value
       end
 
-      def read_bytes(len : Int? = nil, remaining : Int? = nil)
-        if len.nil?
-          len = read_int
-          check_field_within(len, remaining)
-        end
+      def read_bytes(len : Int? = nil)
+        len = read_int if len.nil?
         raise Error::PacketTooLarge.new(@max_packet_size, len) if len > @max_packet_size
+        charge(len)
         bytes = Bytes.new(len)
         @io.read_fully(bytes)
         bytes
-      end
-
-      # A length-prefixed string/binary field occupies 2 (its UInt16 length
-      # prefix) + len bytes. When the caller knows how many bytes are left in the
-      # enclosing packet/section, reject a declared length that would read past
-      # that boundary BEFORE allocating: on a streaming socket an unbounded
-      # read_fully would otherwise block waiting for bytes that belong to a later
-      # packet (or never arrive), and `@max_packet_size` alone does not bound a
-      # field against its own packet's remaining length ([MQTT-1.5.4]). A field
-      # that overruns the packet cannot be parsed, so it is a Malformed Packet
-      # (reason 0x81), matching the property-section length check.
-      private def check_field_within(len : UInt16, remaining : Int?) : Nil
-        return unless remaining
-        if 2 + len.to_i > remaining
-          raise Error::ProtocolError.new(0x81u8, "field of #{len} bytes exceeds #{remaining} bytes left in packet")
-        end
-      end
-
-      # Subtract `n` bytes from the bytes left to read in the current packet,
-      # raising a clean PacketDecode (rather than an OverflowError) when a peer
-      # declares a section larger than what remains.
-      def consume(remaining : UInt32, n : Int) : UInt32
-        if n > remaining
-          raise Error::PacketDecode.new "section of #{n} bytes exceeds #{remaining} remaining"
-        end
-        remaining - n.to_u32
       end
 
       # --- version-dependent framing hooks -----------------------------------
@@ -205,12 +237,10 @@ module MQTT
       # express an abstract def with a free return type; both subclasses still
       # override it, so the base body is never reached.
 
-      # Parse a properties section, returning it with the wire bytes it consumed
-      # (0 on v3, where there is no section), so callers advance their
-      # remaining-length counter without knowing the version. `remaining` is the
-      # bytes left in the enclosing packet at this point: the section's declared
-      # length is bounded by it, so a peer cannot drive a read past the packet.
-      def read_properties(klass : T.class, remaining : UInt32) : {T, UInt32} forall T
+      # Parse a properties section (an empty one on v3, where there is no
+      # section on the wire). Bounds come from the packet byte budget, so a
+      # peer cannot drive a read past the packet.
+      def read_properties(klass : T.class) : T forall T
         raise NotImplementedError.new("read_properties")
       end
 
@@ -319,8 +349,8 @@ module MQTT
           Version::V3_1_1
         end
 
-        def read_properties(klass : T.class, remaining : UInt32) : {T, UInt32} forall T
-          {klass.new, 0u32}
+        def read_properties(klass : T.class) : T forall T
+          klass.new
         end
 
         def write_properties(properties) : Nil
@@ -385,9 +415,8 @@ module MQTT
           Version::V5
         end
 
-        def read_properties(klass : T.class, remaining : UInt32) : {T, UInt32} forall T
-          props = klass.from_io(self, remaining)
-          {props, props.bytesize.to_u32}
+        def read_properties(klass : T.class) : T forall T
+          klass.from_io(self, remaining_in_packet)
         end
 
         def write_properties(properties) : Nil
@@ -400,12 +429,10 @@ module MQTT
           return {nil, properties_klass.new} if remaining_length <= 2
           reason = read_byte
           return {reason, properties_klass.new} if remaining_length == 3
-          avail = remaining_length - 3
-          props = properties_klass.from_io(self, avail)
-          unless props.bytesize.to_u32 == avail
-            raise Error::ProtocolError.new(0x81u8, "ack properties length mismatch")
-          end
-          {reason, props}
+          # The section must consume the rest of the packet exactly: an overrun
+          # is caught by the byte budget, leftovers by the dispatcher's
+          # finish_packet.
+          {reason, properties_klass.from_io(self, remaining_in_packet)}
         end
 
         def write_ack(first_byte : UInt8, packet_id : UInt16, reason_value : UInt8, properties) : Nil
@@ -431,12 +458,8 @@ module MQTT
           return {nil, properties_klass.new} if remaining_length.zero?
           reason = read_byte
           return {reason, properties_klass.new} if remaining_length == 1
-          avail = remaining_length - 1
-          props = properties_klass.from_io(self, avail)
-          unless props.bytesize.to_u32 == avail
-            raise Error::ProtocolError.new(0x81u8, "reason tail properties length mismatch")
-          end
-          {reason, props}
+          # Exact consumption enforced by the byte budget + finish_packet.
+          {reason, properties_klass.from_io(self, remaining_in_packet)}
         end
 
         def write_reason_tail(first_byte : UInt8, reason_value : UInt8, properties) : Nil

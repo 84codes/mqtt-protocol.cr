@@ -52,19 +52,17 @@ module MQTT
         retain = flags.bit(0) > 0
         qos = (flags & 0b00000110u8) >> 1
         decode_assert qos < 3, "invalid qos: #{qos}"
-        topic = io.read_bytes(remaining: remaining_length)
-        remaining_length = io.consume(remaining_length, 2 + topic.bytesize)
+        topic = io.read_bytes
         if qos.positive?
           packet_id = io.read_int
-          remaining_length = io.consume(remaining_length, 2)
         else
           decode_assert dup == false, "DUP must be 0 for QoS 0 messages"
         end
         # Empty topic is only legal in v5 (resolved via a Topic Alias).
         decode_assert io.allow_empty_topic? || !topic.empty?, "empty publish topic"
-        properties, consumed = io.read_properties(PublishProperties, remaining_length)
-        remaining_length = io.consume(remaining_length, consumed)
-        payload = io.read_bytes(remaining_length)
+        properties = io.read_properties(PublishProperties)
+        # The payload is whatever the packet has left.
+        payload = io.read_bytes(io.remaining_in_packet)
         self.new(topic, payload, packet_id, dup, qos, retain, properties)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)

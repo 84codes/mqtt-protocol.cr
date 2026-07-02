@@ -23,14 +23,10 @@ module MQTT
         decode_assert remaining_length > 2, "protocol violation"
 
         packet_id = io.read_int
-        bytes_to_read = io.consume(remaining_length, 2)
-        properties, consumed = io.read_properties(UnsubscribeProperties, bytes_to_read)
-        bytes_to_read = io.consume(bytes_to_read, consumed)
+        properties = io.read_properties(UnsubscribeProperties)
         topics = Array(String).new
-        while bytes_to_read > 0
-          topic = io.read_string(remaining: bytes_to_read)
-          topics << topic
-          bytes_to_read = io.consume(bytes_to_read, 2 + topic.bytesize)
+        while io.remaining_in_packet > 0
+          topics << io.read_string
         end
         self.new(topics, packet_id, properties)
       end

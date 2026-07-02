@@ -37,15 +37,12 @@ module MQTT
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length > 2, "protocol violation"
         packet_id = io.read_int
-        bytes_to_read = io.consume(remaining_length, 2)
-        properties, consumed = io.read_properties(SubAckProperties, bytes_to_read)
-        bytes_to_read = io.consume(bytes_to_read, consumed)
+        properties = io.read_properties(SubAckProperties)
         reason_codes = Array(ReasonCode).new
-        while bytes_to_read > 0
+        while io.remaining_in_packet > 0
           byte = io.read_byte
           reason_codes << (ReasonCode.from_value?(byte) ||
                            raise Error::ProtocolError.new(0x81u8, "invalid suback reason code #{byte}"))
-          bytes_to_read = io.consume(bytes_to_read, 1)
         end
         self.new(reason_codes, packet_id, properties)
       end

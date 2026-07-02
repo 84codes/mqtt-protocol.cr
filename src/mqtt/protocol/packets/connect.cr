@@ -55,14 +55,12 @@ module MQTT
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
 
-        # CONNECT is consume-tracked so a tiny packet can't declare a huge field
-        # (client id / username / password) and drive a read past its boundary.
-        rem = remaining_length.to_u32
+        # Field reads are bounded by the IO's packet byte budget, so a tiny
+        # packet can't declare a huge field (client id / username / password)
+        # and drive a read past its boundary.
         protocol_len = io.read_int
-        rem = io.consume(rem, 2 + protocol_len)
         protocol = io.read_string(protocol_len)
         version_byte = io.read_byte
-        rem = io.consume(rem, 1)
 
         # MQIsdp is MQTT 3.1, MQTT level 4 is 3.1.1, MQTT level 5 is 5.0
         version =
@@ -74,11 +72,11 @@ module MQTT
             raise Error::UnacceptableProtocolVersion.new("invalid protocol: #{protocol.inspect} level #{version_byte}")
           end
         # The protocol level is what reveals the version; reframe so the rest of
-        # CONNECT (and the IO the caller keeps for later packets) uses it.
+        # CONNECT (and the IO the caller keeps for later packets) uses it. The
+        # packet byte budget carries over to the reframed IO.
         io = io.reframe(version)
 
         connect_flags = io.read_byte
-        rem = io.consume(rem, 1)
         decode_assert connect_flags.bit(0) == 0, "reserved connect flag set"
         clean_session = connect_flags.bit(1) == 1
         has_will = connect_flags.bit(2) == 1
@@ -96,13 +94,10 @@ module MQTT
         decode_assert has_username || !has_password, "Password cannot be set without a username"
 
         keepalive = io.read_int
-        rem = io.consume(rem, 2)
 
-        properties, consumed = io.read_properties(ConnectProperties, rem)
-        rem = io.consume(rem, consumed)
+        properties = io.read_properties(ConnectProperties)
 
         client_id_len = io.read_int
-        rem = io.consume(rem, 2 + client_id_len)
         # Maximum client id length is version-specific. v3.1 (MQIsdp) capped it
         # at 23 bytes; v3.1.1 and v5 leave the maximum to the server, bounded
         # only by the 2-byte wire length prefix (65535) and max_packet_size
@@ -118,19 +113,16 @@ module MQTT
         end
 
         if has_will
-          will, rem = Will.from_io(io, will_qos, will_retain, rem)
+          will = Will.from_io(io, will_qos, will_retain)
         end
         if has_username
-          username = io.read_string(remaining: rem)
-          rem = io.consume(rem, 2 + username.bytesize)
+          username = io.read_string
         end
         if has_password
-          password = io.read_bytes(remaining: rem)
-          rem = io.consume(rem, 2 + password.size)
+          password = io.read_bytes
         end
-        # remaining_length must match the fields exactly; trailing bytes mean the
-        # declared length lied and would desync the next packet ([MQTT-2.1.4]).
-        decode_assert rem.zero?, Error::ProtocolError, 0x81u8, "CONNECT has #{rem} trailing bytes"
+        # Exact consumption of remaining_length ([MQTT-2.1.4]) is enforced
+        # centrally by the dispatcher's finish_packet.
 
         self.new(client_id, clean_session, keepalive, username, password, will, version, properties)
       end
@@ -182,17 +174,12 @@ module MQTT
         raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
       end
 
-      # Returns the parsed Will together with the packet bytes still unread after
-      # it, so CONNECT can keep bounding its username/password reads.
-      def self.from_io(io : MQTT::Protocol::IO, qos : UInt8, retain : Bool, remaining : UInt32) : {Will, UInt32}
+      def self.from_io(io : MQTT::Protocol::IO, qos : UInt8, retain : Bool) : Will
         # In v5 the Will Properties precede the Will Topic on the wire.
-        properties, consumed = io.read_properties(WillProperties, remaining)
-        rem = io.consume(remaining, consumed)
-        topic = io.read_string(remaining: rem)
-        rem = io.consume(rem, 2 + topic.bytesize)
-        payload = io.read_bytes(remaining: rem)
-        rem = io.consume(rem, 2 + payload.size)
-        {self.new(topic, payload, qos, retain, properties), rem}
+        properties = io.read_properties(WillProperties)
+        topic = io.read_string
+        payload = io.read_bytes
+        self.new(topic, payload, qos, retain, properties)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end

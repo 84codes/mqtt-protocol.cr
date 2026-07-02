@@ -36,15 +36,12 @@ module MQTT
           return self.new(io.read_int)
         end
         packet_id = io.read_int
-        bytes_to_read = io.consume(remaining_length, 2)
-        properties, consumed = io.read_properties(UnsubAckProperties, bytes_to_read)
-        bytes_to_read = io.consume(bytes_to_read, consumed)
+        properties = io.read_properties(UnsubAckProperties)
         reason_codes = Array(ReasonCode).new
-        while bytes_to_read > 0
+        while io.remaining_in_packet > 0
           byte = io.read_byte
           reason_codes << (ReasonCode.from_value?(byte) ||
                            raise Error::ProtocolError.new(0x81u8, "invalid unsuback reason code #{byte}"))
-          bytes_to_read = io.consume(bytes_to_read, 1)
         end
         self.new(packet_id, reason_codes, properties)
       end

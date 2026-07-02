@@ -48,7 +48,7 @@ module MQTT
         if version.v5?
           V5.new(io, max_packet_size, byte_format, budget)
         else
-          V3.new(io, max_packet_size, byte_format, budget)
+          V3.new(io, max_packet_size, byte_format, budget, version)
         end
       end
 
@@ -370,10 +370,18 @@ module MQTT
       end
 
       # MQTT 3.1 / 3.1.1 framing: no properties sections, no reason codes; the
-      # ack/disconnect bodies are degenerate (bare packet id / empty).
+      # ack/disconnect bodies are degenerate (bare packet id / empty). One
+      # framing serves both v3 versions; the concrete negotiated version is
+      # stored so `io.version` stays honest for 3.1 (MQIsdp) connections.
       class V3 < IO
-        def version : Version
-          Version::V3_1_1
+        getter version : Version
+
+        def initialize(io : ::IO, max_packet_size : UInt32? = nil,
+                       byte_format : ::IO::ByteFormat = ::IO::ByteFormat::NetworkEndian,
+                       budget : Budget? = nil, version : Version = Version::V3_1_1)
+          raise ArgumentError.new("#{version} is not a v3 version") if version.v5?
+          super(io, max_packet_size, byte_format, budget)
+          @version = version
         end
 
         def read_properties(klass : T.class) : T forall T

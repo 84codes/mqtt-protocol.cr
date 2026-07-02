@@ -341,3 +341,35 @@ describe MQTT::Protocol::IO do
     end
   end
 end
+
+# 2.6: the IO models the concrete negotiated version, so a v3.1 (MQIsdp)
+# connection is not misreported as v3.1.1 and reframe does not allocate a new
+# IO for a version it already frames for.
+describe "IO version modeling" do
+  it "reports the concrete v3 version" do
+    io = MQTT::Protocol::IO.for(MQTT::Protocol::Version::V3_1, IO::Memory.new)
+    io.version.should eq MQTT::Protocol::Version::V3_1
+  end
+
+  it "reframe returns self when the version already matches" do
+    io = MQTT::Protocol::IO.for(MQTT::Protocol::Version::V3_1, IO::Memory.new)
+    io.reframe(MQTT::Protocol::Version::V3_1).should be io
+  end
+
+  it "read_connect hands back an IO reporting v3.1 for an MQIsdp client" do
+    mio = IO::Memory.new
+    w = MQTT::Protocol::IO::V3.new(mio)
+    w.write_byte 0b00010000u8 # CONNECT
+    # MQIsdp(2+6) + level(1) + flags(1) + keepalive(2) + client id(2+3) = 17
+    w.write_remaining_length 17
+    w.write_string "MQIsdp"
+    w.write_byte 0x03u8       # protocol level 3 (MQTT 3.1)
+    w.write_byte 0b00000010u8 # clean session
+    w.write_int 30u16
+    w.write_string "abc"
+    mio.rewind
+    connect, io = MQTT::Protocol::IO.read_connect(mio)
+    connect.version.should eq MQTT::Protocol::Version::V3_1
+    io.version.should eq MQTT::Protocol::Version::V3_1
+  end
+end

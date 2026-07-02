@@ -13,6 +13,11 @@ module MQTT
       # skips a per-message allocation and UTF-8 validation pass. `topic` decodes
       # to a String for convenience (back-compat); `topic_bytes` is the raw,
       # allocation-free form the hot path should prefer.
+      #
+      # NOTE: despite looking like a plain getter, this allocates a new String
+      # (copying the topic bytes) on EVERY call - memoization is unreliable on
+      # a struct (the memo dies with each copy). Call it once and hold the
+      # result, or use `topic_bytes` on hot paths.
       def topic : String
         String.new(@topic)
       end

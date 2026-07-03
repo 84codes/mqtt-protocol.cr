@@ -111,15 +111,17 @@ module MQTT
       # every read primitive then charges the bytes it is about to read, so no
       # parse - present or future - can read past the packet boundary
       # (section 2.1.4 framing integrity, enforced structurally instead of
-      # per codec). These three are for the dispatcher; codecs never call them.
+      # per codec). The lifecycle methods are `protected`: only the dispatcher
+      # and codecs (the shared MQTT::Protocol namespace) may drive the budget,
+      # so external code cannot desync it - misuse is a compile error.
 
-      def start_packet(remaining_length : UInt32) : Nil
+      protected def start_packet(remaining_length : UInt32) : Nil
         @budget.remaining = remaining_length
       end
 
       # Reject a packet whose codec consumed fewer bytes than the declared
       # remaining length: the leftovers would desync the next packet's header.
-      def finish_packet : Nil
+      protected def finish_packet : Nil
         if (remaining = @budget.remaining) && remaining > 0
           raise Error::ProtocolError.new(0x81u8, "packet has #{remaining} trailing bytes")
         end
@@ -127,7 +129,7 @@ module MQTT
 
       # Deactivate the budget, also on error paths, so a stale budget never
       # charges the next packet's header.
-      def abort_packet : Nil
+      protected def abort_packet : Nil
         @budget.remaining = nil
       end
 
@@ -142,7 +144,7 @@ module MQTT
       # call arms the budget from that argument so the parse is bounded the
       # same way instead of silently misparsing. No-op mid-packet, so the
       # dispatcher path is unaffected.
-      def ensure_packet_budget(remaining_length : UInt32) : Nil
+      protected def ensure_packet_budget(remaining_length : UInt32) : Nil
         if (@budget.remaining || 0u32).zero?
           @budget.remaining = remaining_length
         end

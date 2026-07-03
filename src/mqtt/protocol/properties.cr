@@ -35,7 +35,20 @@ module MQTT
         {% has_sub_ids = specs.any? { |s| s[2] == :sub_id_list } %}
 
         {% for s in singles %}
+        {% if s[3] %}
+        getter {{ s[0].id }} : {{ types[s[2]] }}?
+
+        # The declared range holds on encode as well as decode: the shard must
+        # never construct a packet its own decoder would reject.
+        def {{ s[0].id }}=(value : {{ types[s[2]] }}?)
+          unless value.nil? || ({{ s[3] }}).includes?(value)
+            raise ArgumentError.new("{{ s[0].id }} must be in {{ s[3] }}, got #{value}")
+          end
+          @{{ s[0].id }} = value
+        end
+        {% else %}
         property {{ s[0].id }} : {{ types[s[2]] }}?
+        {% end %}
         {% end %}
 
         # The repeatable properties are nil-backed so decoding or constructing
@@ -85,13 +98,21 @@ module MQTT
 
         def initialize(
           {% for s in singles %}
-          @{{ s[0].id }} : {{ types[s[2]] }}? = nil,
+          {{ s[0].id }} : {{ types[s[2]] }}? = nil,
           {% end %}
           user_properties : Array(StringPair)? = nil,
           {% if has_sub_ids %}
           subscription_identifiers : Array(UInt32)? = nil,
           {% end %}
         )
+          {% for s in singles %}
+          {% if s[3] %}
+          # Ranged fields go through the validating setter.
+          self.{{ s[0].id }} = {{ s[0].id }}
+          {% else %}
+          @{{ s[0].id }} = {{ s[0].id }}
+          {% end %}
+          {% end %}
           # Empty normalises to nil so a constructed instance compares equal
           # to a decoded one (struct value equality is over the raw fields).
           @user_properties = user_properties.try { |a| a.empty? ? nil : a }
@@ -203,39 +224,35 @@ module MQTT
                 unless val <= 1u8
                   raise Error::ProtocolError.new(0x82u8, "property 0x#{id.to_s(16)} must be 0 or 1, got #{val}")
                 end
-                props.{{ s[0].id }} = val == 1u8
                 consumed += 1
               {% elsif k == :byte_int %}
                 val = io.read_byte
-                props.{{ s[0].id }} = val
                 consumed += 1
               {% elsif k == :two_byte_int %}
                 val = io.read_int
-                props.{{ s[0].id }} = val
                 consumed += 2
               {% elsif k == :four_byte_int %}
                 val = io.read_four_byte_int
-                props.{{ s[0].id }} = val
                 consumed += 4
               {% elsif k == :string %}
-                str = io.read_string
-                props.{{ s[0].id }} = str
-                consumed += 2 + str.bytesize
+                val = io.read_string
+                consumed += 2 + val.bytesize
               {% elsif k == :binary %}
-                bytes = io.read_bytes
-                props.{{ s[0].id }} = bytes
-                consumed += 2 + bytes.size
+                val = io.read_bytes
+                consumed += 2 + val.size
               {% elsif k == :var_int %}
                 val = io.read_variable_byte_int
-                props.{{ s[0].id }} = val
                 consumed += MQTT::Protocol::IO.variable_byte_int_size(val)
               {% end %}
               {% if s[3] %}
                 # Declared value constraint: out of range is a Protocol Error.
+                # Checked before assigning so the wire error is 0x82, not the
+                # setter's ArgumentError (that one is for local construction).
                 unless ({{ s[3] }}).includes?(val)
                   raise Error::ProtocolError.new(0x82u8, "property 0x#{id.to_s(16)} value #{val} out of range {{ s[3] }}")
                 end
               {% end %}
+                props.{{ s[0].id }} = {% if k == :byte_bool %}val == 1u8{% else %}val{% end %}
             {% end %}
             when 0x26u8
               pair = io.read_string_pair

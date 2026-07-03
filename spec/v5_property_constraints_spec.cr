@@ -102,3 +102,53 @@ describe "v5 PUBLISH empty topic" do
     decoded.properties.topic_alias.should eq 5u16
   end
 end
+
+# 5.2: the declared ranges must also hold on encode - the shard must never
+# construct a packet its own decoder rejects. Constructor and setter enforce
+# the same range table; out-of-range construction is an ArgumentError.
+describe "property value constraints on construction" do
+  it "rejects Maximum QoS above 1 in the constructor" do
+    expect_raises(ArgumentError, /maximum_qos/) do
+      MQTT::Protocol::ConnackProperties.new(maximum_qos: 2u8)
+    end
+  end
+
+  it "rejects Maximum QoS above 1 via the setter" do
+    props = MQTT::Protocol::ConnackProperties.new
+    expect_raises(ArgumentError, /maximum_qos/) { props.maximum_qos = 2u8 }
+  end
+
+  it "rejects Topic Alias 0 (which would defeat the empty-topic gate)" do
+    expect_raises(ArgumentError, /topic_alias/) do
+      MQTT::Protocol::PublishProperties.new(topic_alias: 0u16)
+    end
+  end
+
+  it "rejects Receive Maximum 0 in constructor and setter" do
+    expect_raises(ArgumentError, /receive_maximum/) do
+      MQTT::Protocol::ConnectProperties.new(receive_maximum: 0u16)
+    end
+    props = MQTT::Protocol::ConnackProperties.new
+    expect_raises(ArgumentError, /receive_maximum/) { props.receive_maximum = 0u16 }
+  end
+
+  it "rejects Maximum Packet Size 0 in the constructor" do
+    expect_raises(ArgumentError, /maximum_packet_size/) do
+      MQTT::Protocol::ConnectProperties.new(maximum_packet_size: 0u32)
+    end
+  end
+
+  it "rejects Subscription Identifier 0 in the constructor" do
+    expect_raises(ArgumentError, /subscription_identifier/) do
+      MQTT::Protocol::SubscribeProperties.new(subscription_identifier: 0u32)
+    end
+  end
+
+  it "accepts in-range and nil values" do
+    props = MQTT::Protocol::ConnackProperties.new(maximum_qos: 1u8, receive_maximum: 1u16)
+    props.maximum_qos.should eq 1u8
+    props.maximum_qos = nil
+    props.maximum_qos.should be_nil
+    MQTT::Protocol::PublishProperties.new(topic_alias: 65535u16).topic_alias.should eq 65535u16
+  end
+end

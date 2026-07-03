@@ -44,3 +44,43 @@ describe "version gating" do
     packet.reason_codes.should eq [MQTT::Protocol::SubAck::ReasonCode::PacketIdentifierInUse]
   end
 end
+
+# Write-side mirrors (FABLE_FINDINGS.md 5.5/5.6): a v3 connection must also
+# refuse to EMIT what it cannot express - v5-only SUBACK reason codes and the
+# AUTH packet - raising before any byte goes on the wire (like write_connack)
+# instead of writing an invalid packet or silently dropping the body.
+describe "write-side version gating" do
+  it "refuses to encode a v5-only SUBACK reason code on a v3 connection, writing nothing" do
+    suback = MQTT::Protocol::SubAck.new([MQTT::Protocol::SubAck::ReasonCode::QuotaExceeded], 1u16)
+    mio = IO::Memory.new
+    io = MQTT::Protocol::IO::V3.new(mio)
+    expect_raises(MQTT::Protocol::Error::PacketEncode, /return code/) do
+      io.write_packet(suback)
+    end
+    mio.to_slice.should be_empty
+  end
+
+  it "encodes the v3-expressible SUBACK codes on a v3 connection" do
+    codes = [MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1,
+             MQTT::Protocol::SubAck::ReasonCode::UnspecifiedError]
+    mio = IO::Memory.new
+    MQTT::Protocol::IO::V3.new(mio).write_packet(MQTT::Protocol::SubAck.new(codes, 1u16))
+    mio.to_slice.should eq Bytes[0x90, 0x04, 0x00, 0x01, 0x01, 0x80]
+  end
+
+  it "refuses to encode AUTH on a v3 connection, writing nothing" do
+    auth = MQTT::Protocol::Auth.new(MQTT::Protocol::Auth::ReasonCode::ContinueAuthentication)
+    mio = IO::Memory.new
+    io = MQTT::Protocol::IO::V3.new(mio)
+    expect_raises(MQTT::Protocol::Error::PacketEncode, /AUTH/) do
+      io.write_packet(auth)
+    end
+    mio.to_slice.should be_empty
+  end
+
+  it "still encodes AUTH on a v5 connection" do
+    mio = IO::Memory.new
+    MQTT::Protocol::IO::V5.new(mio).write_packet(MQTT::Protocol::Auth.new)
+    mio.to_slice.should eq Bytes[0xF0, 0x00]
+  end
+end

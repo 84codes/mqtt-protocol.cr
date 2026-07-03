@@ -38,6 +38,9 @@ module MQTT
       end
 
       def to_io(io)
+        # AUTH does not exist before v5; refuse to emit it rather than let the
+        # v3 reason-tail writer silently drop the body.
+        io.validate_outbound_packet_type(TYPE)
         io.write_reason_tail(TYPE << 4, reason_code.value, properties)
       end
     end

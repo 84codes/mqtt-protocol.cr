@@ -280,6 +280,12 @@ module MQTT
       # bytes are read. Keeps the version-blind dispatcher from parsing
       # v5-only packets on a v3 connection.
       abstract def validate_packet_type(type : UInt8) : Nil
+      # Write-side mirror of validate_packet_type: reject packet types this
+      # version cannot put on the wire, raising before any byte is written.
+      abstract def validate_outbound_packet_type(type : UInt8) : Nil
+      # Write-side mirror of read_suback_reason: reject SUBACK reason codes
+      # this version cannot express, raising before any byte is written.
+      abstract def validate_suback_reason(reason_code : SubAck::ReasonCode) : Nil
       # Interpret a CONNACK code byte: a v3 return code or a v5 reason code.
       abstract def read_connack_reason(byte : UInt8)
       # Interpret a SUBACK payload byte: v3 allows only the granted-QoS values
@@ -442,6 +448,20 @@ module MQTT
           end
         end
 
+        def validate_outbound_packet_type(type : UInt8) : Nil
+          if type == Auth::TYPE
+            raise Error::PacketEncode.new "cannot encode AUTH on a v3 connection"
+          end
+        end
+
+        def validate_suback_reason(reason_code : SubAck::ReasonCode) : Nil
+          # Only the granted-QoS values and 0x80 Failure exist in a v3.1.1
+          # SUBACK payload [MQTT-3.9.3-2].
+          unless reason_code.value <= 2 || reason_code.value == 0x80
+            raise Error::PacketEncode.new "no v3 suback return code for #{reason_code}"
+          end
+        end
+
         def read_connack_reason(byte : UInt8)
           unless byte < 6
             raise Error::PacketDecode.new "invalid return code: #{byte}"
@@ -525,6 +545,12 @@ module MQTT
         end
 
         def validate_packet_type(type : UInt8) : Nil
+        end
+
+        def validate_outbound_packet_type(type : UInt8) : Nil
+        end
+
+        def validate_suback_reason(reason_code : SubAck::ReasonCode) : Nil
         end
 
         def read_connack_reason(byte : UInt8)

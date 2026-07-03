@@ -86,8 +86,10 @@ module MQTT
 
       # Deliberately NO forward_missing_to: an unwrapped ::IO read (read_fully,
       # skip, gets, ...) would bypass the packet byte budget and falsify its
-      # guarantee. Transport-level needs (flush, close, ...) go through the
-      # public `io` getter.
+      # guarantee. Only the transport lifecycle ops below - which never touch
+      # the budget - are delegated explicitly; a socket-specific method like
+      # `write_timeout=` still needs the public `io` getter, consciously.
+      delegate flush, close, closed?, to: @io
 
       def read_packet : Packet
         Packet.from_io(self)

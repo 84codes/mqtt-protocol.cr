@@ -88,7 +88,7 @@ module MQTT
         remaining_length = io.read_remaining_length
         # Every read primitive charges against this budget, so no codec can
         # read past the packet boundary; finish_packet then rejects a codec
-        # that consumed too little. Together they enforce [MQTT-2.1.4] framing
+        # that consumed too little. Together they enforce section 2.1.4 framing
         # integrity centrally instead of per packet type.
         io.start_packet(remaining_length)
         packet = case type

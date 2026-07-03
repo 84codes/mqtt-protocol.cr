@@ -223,7 +223,12 @@ module MQTT
               {% if k == :byte_bool %}
                 val = io.read_byte
                 # A boolean property with a value other than 0 or 1 is a
-                # Protocol Error (3.1.2.11.5/3.1.2.11.6, 3.2.2.3.5, 3.3.2.3.2, ...).
+                # Protocol Error (3.1.2.11.6/3.1.2.11.7 Request Response/
+                # Problem Information, 3.2.2.3.5 Retain Available, ...).
+                # Exception: 3.3.2.3.2 Payload Format Indicator states no such
+                # rule; rejecting non-0/1 there too is an intentional
+                # deviation, resting on the generic malformed-packet
+                # reasoning of 2.4.
                 unless val <= 1u8
                   raise Error::ProtocolError.new(0x82u8, "property 0x#{id.to_s(16)} must be 0 or 1, got #{val}")
                 end

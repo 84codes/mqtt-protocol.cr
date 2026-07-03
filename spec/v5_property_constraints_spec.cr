@@ -19,7 +19,7 @@ end
 
 describe "v5 property value constraints" do
   it "rejects a boolean property with a value other than 0 or 1" do
-    # Request Response Information (0x19) = 2; 3.1.2.11.5: "It is a Protocol
+    # Request Response Information (0x19) = 2; 3.1.2.11.6: "It is a Protocol
     # Error ... to have a value other than 0 or 1".
     expect_out_of_range MQTT::Protocol::ConnectProperties, Bytes[0x02, 0x19, 0x02]
   end
@@ -55,7 +55,7 @@ describe "v5 property value constraints" do
 end
 
 # 1.8: a v5 PUBLISH with a zero-length Topic Name is only legal when a Topic
-# Alias is present (3.3.2.1 / [MQTT-3.3.2-6]); the encode side must not emit
+# Alias is present (the unnumbered Protocol Error sentence in 3.3.2.1); the encode side must not emit
 # an empty topic it could never emit legally.
 private def decode_v5(bytes : Bytes)
   mio = IO::Memory.new(bytes.size)

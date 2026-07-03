@@ -251,7 +251,7 @@ describe MQTT::Protocol::Connect do
   it "rejects a CONNECT whose remaining_length over-declares (trailing bytes)" do
     # A valid minimal v5 CONNECT body is 19 bytes; this declares 20 and appends
     # one trailing byte. The fields parse, leaving 1 unconsumed byte that would
-    # otherwise desync the next packet. [MQTT-2.1.4]
+    # otherwise desync the next packet (section 2.1.4).
     bytes = Bytes[
       0x10, 0x14,                                     # CONNECT, remaining_length 20 (one more than the 19-byte body)
       0x00, 0x04, 0x4D, 0x51, 0x54, 0x54,             # "MQTT"

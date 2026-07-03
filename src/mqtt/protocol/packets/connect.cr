@@ -131,7 +131,7 @@ module MQTT
         if has_password
           password = io.read_bytes
         end
-        # Exact consumption of remaining_length ([MQTT-2.1.4]) is enforced
+        # Exact consumption of remaining_length (section 2.1.4) is enforced
         # centrally by the dispatcher's finish_packet.
 
         self.new(client_id, clean_session, keepalive, username, password, will, version, properties)

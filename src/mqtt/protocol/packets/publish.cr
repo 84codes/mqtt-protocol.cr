@@ -90,7 +90,8 @@ module MQTT
         properties = io.read_properties(PublishProperties)
         if topic.empty?
           # A zero-length Topic Name is only legal on v5, and only when it is
-          # resolved via a Topic Alias (3.3.2.1 / [MQTT-3.3.2-6]).
+          # resolved via a Topic Alias (the unnumbered Protocol Error
+          # sentence in 3.3.2.1).
           decode_assert io.allow_empty_topic?, "empty publish topic"
           unless properties.topic_alias
             raise Error::ProtocolError.new(0x82u8, "empty topic without a topic alias")
@@ -105,7 +106,8 @@ module MQTT
 
       def to_io(io)
         # Mirror of the decode rule: an empty topic can only go on the wire in
-        # v5 with a Topic Alias to resolve it (3.3.2.1 / [MQTT-3.3.2-6]).
+        # v5 with a Topic Alias to resolve it (the unnumbered Protocol Error
+        # sentence in 3.3.2.1).
         if @topic.empty? && !(io.allow_empty_topic? && properties.topic_alias)
           raise MQTT::Protocol::Error::PacketEncode.new("empty topic requires a v5 topic alias")
         end

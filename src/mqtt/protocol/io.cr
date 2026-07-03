@@ -110,7 +110,7 @@ module MQTT
       # `Packet.read_body` starts the budget with the packet's remaining length;
       # every read primitive then charges the bytes it is about to read, so no
       # parse - present or future - can read past the packet boundary
-      # ([MQTT-2.1.4]-style framing integrity, enforced structurally instead of
+      # (section 2.1.4 framing integrity, enforced structurally instead of
       # per codec). These three are for the dispatcher; codecs never call them.
 
       def start_packet(remaining_length : UInt32) : Nil
@@ -360,7 +360,7 @@ module MQTT
       end
 
       # Wire size of a v5 reason-code + properties tail, encoding the omission
-      # rule of 3.4.2.1 / 3.14.2.2 / 3.15.2.2: a zero (success/normal) reason
+      # rule of 3.4.2.1 / 3.14.2.1 / 3.15.2.1: a zero (success/normal) reason
       # with no properties is omitted entirely, and the properties section is
       # omitted when empty and the reason is the last byte. The single source
       # of truth for this rule - both the remaining_length arithmetic and the
@@ -441,8 +441,8 @@ module MQTT
         end
 
         def validate_packet_type(type : UInt8) : Nil
-          # Type 15 (AUTH) is reserved in v3 and MUST be treated as a
-          # protocol violation [MQTT-2.2.1].
+          # Type 15 (AUTH) is Reserved/Forbidden in v3 (Table 2.1, section
+          # 2.2.1); a violation closes the connection per [MQTT-4.8.0-1].
           if type == Auth::TYPE
             raise Error::PacketDecode.new "invalid packet type #{type}"
           end

@@ -1,6 +1,6 @@
 require "./spec_helper"
 
-# Drift guard for the v5 tail-omission rule (3.4.2.1 / 3.14.2.2): a zero
+# Drift guard for the v5 tail-omission rule (3.4.2.1 / 3.14.2.1): a zero
 # (success) reason with no properties omits the tail entirely; a bare reason
 # omits the properties section. The rule feeds both `remaining_length` (what
 # the packet reports) and the writers (what actually goes on the wire); these

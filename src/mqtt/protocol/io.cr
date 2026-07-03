@@ -136,6 +136,18 @@ module MQTT
         @budget.remaining || 0u32
       end
 
+      # Codec `from_io` entry guard. Parsing assumes an active byte budget
+      # (normally started by `Packet.read_body`), but the per-packet `from_io`
+      # methods are public and take an explicit `remaining_length` - a direct
+      # call arms the budget from that argument so the parse is bounded the
+      # same way instead of silently misparsing. No-op mid-packet, so the
+      # dispatcher path is unaffected.
+      def ensure_packet_budget(remaining_length : UInt32) : Nil
+        if (@budget.remaining || 0u32).zero?
+          @budget.remaining = remaining_length
+        end
+      end
+
       # Charge `n` bytes against the current packet's budget BEFORE reading
       # them, raising Malformed Packet (0x81) when the packet has fewer bytes
       # left - on a streaming socket an unbounded read would otherwise block

@@ -200,6 +200,9 @@ module MQTT
         # cannot make the parser read past its own boundary (and a small packet
         # cannot declare a huge property section).
         def self.from_io(io : MQTT::Protocol::IO, remaining : UInt32) : self
+          # Direct calls (outside Packet.read_body) arm the byte budget from
+          # the explicit bound so field reads cannot over-read past it.
+          io.ensure_packet_budget(remaining)
           props = new
           total = io.read_variable_byte_int.to_i
           prefix = MQTT::Protocol::IO.variable_byte_int_size(total)

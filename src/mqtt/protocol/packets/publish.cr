@@ -80,6 +80,7 @@ module MQTT
         retain = flags.bit(0) > 0
         qos = (flags & 0b00000110u8) >> 1
         decode_assert qos < 3, "invalid qos: #{qos}"
+        io.ensure_packet_budget(remaining_length)
         topic = io.read_bytes
         if qos.positive?
           packet_id = io.read_int

@@ -60,6 +60,7 @@ module MQTT
       def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
         decode_assert flags == 2, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length > 2, "protocol violation"
+        io.ensure_packet_budget(remaining_length)
         packet_id = io.read_int
 
         # The subscription-identifier-0 rejection (3.8.2.1.2) is declared in

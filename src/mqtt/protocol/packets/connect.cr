@@ -59,6 +59,7 @@ module MQTT
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
+        io.ensure_packet_budget(remaining_length.to_u32)
 
         # Field reads are bounded by the IO's packet byte budget, so a tiny
         # packet can't declare a huge field (client id / username / password)

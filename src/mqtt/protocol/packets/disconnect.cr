@@ -53,6 +53,7 @@ module MQTT
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
+        io.ensure_packet_budget(remaining_length)
         reason_byte, properties = io.read_reason_tail(remaining_length, DisconnectProperties)
         if reason_byte.nil?
           new(ReasonCode::NormalDisconnection, properties)

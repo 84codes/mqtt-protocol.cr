@@ -36,6 +36,7 @@ module MQTT
       def self.from_io(io : MQTT::Protocol::IO, flags : UInt8, remaining_length : UInt32)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length > 2, "protocol violation"
+        io.ensure_packet_budget(remaining_length)
         packet_id = io.read_int
         properties = io.read_properties(SubAckProperties)
         reason_codes = Array(ReasonCode).new

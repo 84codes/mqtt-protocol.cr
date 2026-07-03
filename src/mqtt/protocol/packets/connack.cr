@@ -94,6 +94,7 @@ module MQTT
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
 
         decode_assert remaining_length >= 2, "invalid length #{remaining_length} for connack"
+        io.ensure_packet_budget(remaining_length)
         connack_flags = io.read_byte
         decode_assert (connack_flags & 0b11111110).zero?, MQTT::Protocol::Error::InvalidConnackFlags, connack_flags
         session_present = (connack_flags & 1u8) > 0

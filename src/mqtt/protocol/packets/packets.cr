@@ -50,6 +50,7 @@ module MQTT
           # The packet id is always present (2 bytes); reject a short header
           # before reading it so a truncated ack can't over-read the next packet.
           decode_assert remaining_length >= 2, "invalid length #{remaining_length} for ack"
+          io.ensure_packet_budget(remaining_length)
           packet_id = io.read_int
           reason_byte, properties = io.read_ack_tail(remaining_length, PubAckProperties)
           if reason_byte.nil?

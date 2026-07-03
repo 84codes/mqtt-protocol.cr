@@ -43,6 +43,7 @@ module MQTT
 
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
+        io.ensure_packet_budget(remaining_length)
         packet_id = io.read_int
         # v3 UNSUBACK is a bare packet id with no payload at all; any v3
         # payload bytes are rejected by the byte budget + finish_packet.

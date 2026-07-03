@@ -16,12 +16,18 @@ module MQTT
 
       getter packet_id, properties
 
-      # Nil-backed and lazily allocated: a v3 UNSUBACK (no payload) allocates
-      # no array. Empty normalises to nil so value equality holds.
+      # Nil-backed: a v3 UNSUBACK (no payload) allocates no array. Empty
+      # normalises to nil so value equality holds. The getter does not
+      # memoize (reads never mutate); appending to its result is not
+      # supported - pass the full array to the constructor.
       @reason_codes : Array(ReasonCode)?
 
       def reason_codes : Array(ReasonCode)
-        @reason_codes ||= [] of ReasonCode
+        @reason_codes || [] of ReasonCode
+      end
+
+      def reason_codes? : Array(ReasonCode)?
+        @reason_codes
       end
 
       def initialize(@packet_id : UInt16, reason_codes : Array(ReasonCode)? = nil,

@@ -252,3 +252,48 @@ describe MQTT::Protocol::AuthProperties do
     roundtrip(props).should eq props
   end
 end
+
+# Value semantics of the nil-backed repeatable properties (FABLE_FINDINGS.md
+# 5.1). The getters do not memoize: reading must never mutate the struct, so
+# equality is independent of read history, and the setter normalises empty to
+# nil so equality is independent of how the value was assigned.
+describe "repeatable property value semantics" do
+  it "reading user_properties does not affect equality" do
+    a = MQTT::Protocol::ConnectProperties.new
+    b = MQTT::Protocol::ConnectProperties.new
+    a.user_properties.should be_empty
+    a.should eq b
+  end
+
+  it "reading subscription_identifiers does not affect equality" do
+    a = MQTT::Protocol::PublishProperties.new
+    b = MQTT::Protocol::PublishProperties.new
+    a.subscription_identifiers.should be_empty
+    a.should eq b
+  end
+
+  it "setter normalises an empty array to nil for equality" do
+    a = MQTT::Protocol::ConnectProperties.new
+    a.user_properties = [] of MQTT::Protocol::StringPair
+    a.should eq MQTT::Protocol::ConnectProperties.new
+  end
+
+  it "exposes nilable readers that never allocate" do
+    props = MQTT::Protocol::ConnectProperties.new
+    props.user_properties?.should be_nil
+    props.user_properties = [{"a", "b"}]
+    props.user_properties?.should eq [{"a", "b"}]
+    pub = MQTT::Protocol::PublishProperties.new
+    pub.subscription_identifiers?.should be_nil
+    pub.subscription_identifiers = [1u32]
+    pub.subscription_identifiers?.should eq [1u32]
+  end
+
+  it "reading UnsubAck#reason_codes does not affect equality" do
+    a = MQTT::Protocol::UnsubAck.new(1u16)
+    b = MQTT::Protocol::UnsubAck.new(1u16)
+    a.reason_codes.should be_empty
+    a.reason_codes?.should be_nil
+    a.should eq b
+  end
+end

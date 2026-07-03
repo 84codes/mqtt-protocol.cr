@@ -38,27 +38,48 @@ module MQTT
         property {{ s[0].id }} : {{ types[s[2]] }}?
         {% end %}
 
-        # The repeatable properties are nil-backed and lazily allocated, so
-        # decoding or constructing a packet without them allocates nothing
-        # (the common case on the hot path); the getter materialises an array
-        # on first use.
+        # The repeatable properties are nil-backed so decoding or constructing
+        # a packet without them allocates nothing (the common case on the hot
+        # path). These are value structs: the getters do NOT memoize (a read
+        # never mutates, so `==` stays stable across reads and copies), which
+        # also means appending to the getter's result is not supported - build
+        # the array and assign it whole via the setter. Use the nilable `?`
+        # reader to inspect without allocating.
         @user_properties : Array(StringPair)?
 
         def user_properties : Array(StringPair)
-          @user_properties ||= [] of StringPair
+          @user_properties || [] of StringPair
         end
 
-        def user_properties=(@user_properties : Array(StringPair)?)
+        def user_properties? : Array(StringPair)?
+          @user_properties
+        end
+
+        def user_properties=(user_properties : Array(StringPair)?)
+          @user_properties = user_properties.try { |a| a.empty? ? nil : a }
+        end
+
+        protected def add_user_property(pair : StringPair) : Nil
+          (@user_properties ||= [] of StringPair) << pair
         end
 
         {% if has_sub_ids %}
         @subscription_identifiers : Array(UInt32)?
 
         def subscription_identifiers : Array(UInt32)
-          @subscription_identifiers ||= [] of UInt32
+          @subscription_identifiers || [] of UInt32
         end
 
-        def subscription_identifiers=(@subscription_identifiers : Array(UInt32)?)
+        def subscription_identifiers? : Array(UInt32)?
+          @subscription_identifiers
+        end
+
+        def subscription_identifiers=(subscription_identifiers : Array(UInt32)?)
+          @subscription_identifiers = subscription_identifiers.try { |a| a.empty? ? nil : a }
+        end
+
+        protected def add_subscription_identifier(sub_id : UInt32) : Nil
+          (@subscription_identifiers ||= [] of UInt32) << sub_id
         end
         {% end %}
 
@@ -218,7 +239,7 @@ module MQTT
             {% end %}
             when 0x26u8
               pair = io.read_string_pair
-              props.user_properties << pair
+              props.add_user_property(pair)
               consumed += 2 + pair[0].bytesize + 2 + pair[1].bytesize
             {% if has_sub_ids %}
             when 0x0Bu8
@@ -228,7 +249,7 @@ module MQTT
               if val.zero?
                 raise Error::ProtocolError.new(0x82u8, "subscription identifier must not be 0")
               end
-              props.subscription_identifiers << val
+              props.add_subscription_identifier(val)
               consumed += MQTT::Protocol::IO.variable_byte_int_size(val)
             {% end %}
             else

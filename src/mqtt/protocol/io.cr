@@ -84,7 +84,10 @@ module MQTT
         IO.for(version, @io, @max_packet_size, @byte_format, @budget)
       end
 
-      forward_missing_to @io
+      # Deliberately NO forward_missing_to: an unwrapped ::IO read (read_fully,
+      # skip, gets, ...) would bypass the packet byte budget and falsify its
+      # guarantee. Transport-level needs (flush, close, ...) go through the
+      # public `io` getter.
 
       def read_packet : Packet
         Packet.from_io(self)

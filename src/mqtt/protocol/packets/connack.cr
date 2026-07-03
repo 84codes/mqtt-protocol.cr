@@ -107,7 +107,14 @@ module MQTT
       end
 
       def to_io(io)
-        io.write_connack(remaining_length(io.version), session_present?, reason_code, properties)
+        # Resolve the code byte first: an unmappable v5 reason on a v3 IO must
+        # raise before any byte goes on the wire.
+        code = io.connack_code_byte(reason_code)
+        io.write_byte(TYPE << 4)
+        io.write_remaining_length remaining_length(io.version)
+        io.write_byte(session_present? ? 1u8 : 0u8)
+        io.write_byte(code)
+        io.write_properties(properties)
       end
     end
   end

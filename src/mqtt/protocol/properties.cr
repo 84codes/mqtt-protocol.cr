@@ -31,23 +31,23 @@ module MQTT
         {% types = {:byte_bool => Bool, :byte_int => UInt8, :two_byte_int => UInt16,
                     :four_byte_int => UInt32, :string => String, :binary => Bytes,
                     :var_int => UInt32} %}
-        {% singles = specs.select { |s| s[2] != :sub_id_list } %}
-        {% has_sub_ids = specs.any? { |s| s[2] == :sub_id_list } %}
+        {% singles = specs.select { |spec| spec[2] != :sub_id_list } %}
+        {% has_sub_ids = specs.any? { |spec| spec[2] == :sub_id_list } %}
 
-        {% for s in singles %}
-        {% if s[3] %}
-        getter {{ s[0].id }} : {{ types[s[2]] }}?
+        {% for spec in singles %}
+        {% if spec[3] %}
+        getter {{ spec[0].id }} : {{ types[spec[2]] }}?
 
         # The declared range holds on encode as well as decode: the shard must
         # never construct a packet its own decoder would reject.
-        def {{ s[0].id }}=(value : {{ types[s[2]] }}?)
-          unless value.nil? || ({{ s[3] }}).includes?(value)
-            raise ArgumentError.new("{{ s[0].id }} must be in {{ s[3] }}, got #{value}")
+        def {{ spec[0].id }}=(value : {{ types[spec[2]] }}?)
+          unless value.nil? || ({{ spec[3] }}).includes?(value)
+            raise ArgumentError.new("{{ spec[0].id }} must be in {{ spec[3] }}, got #{value}")
           end
-          @{{ s[0].id }} = value
+          @{{ spec[0].id }} = value
         end
         {% else %}
-        property {{ s[0].id }} : {{ types[s[2]] }}?
+        property {{ spec[0].id }} : {{ types[spec[2]] }}?
         {% end %}
         {% end %}
 
@@ -97,20 +97,20 @@ module MQTT
         {% end %}
 
         def initialize(
-          {% for s in singles %}
-          {{ s[0].id }} : {{ types[s[2]] }}? = nil,
+          {% for spec in singles %}
+          {{ spec[0].id }} : {{ types[spec[2]] }}? = nil,
           {% end %}
           user_properties : Array(StringPair)? = nil,
           {% if has_sub_ids %}
           subscription_identifiers : Array(UInt32)? = nil,
           {% end %}
         )
-          {% for s in singles %}
-          {% if s[3] %}
+          {% for spec in singles %}
+          {% if spec[3] %}
           # Ranged fields go through the validating setter.
-          self.{{ s[0].id }} = {{ s[0].id }}
+          self.{{ spec[0].id }} = {{ spec[0].id }}
           {% else %}
-          @{{ s[0].id }} = {{ s[0].id }}
+          @{{ spec[0].id }} = {{ spec[0].id }}
           {% end %}
           {% end %}
           # Empty normalises to nil so a constructed instance compares equal
@@ -122,16 +122,16 @@ module MQTT
         end
 
         def empty? : Bool
-          {% for s in singles %}@{{ s[0].id }}.nil? && {% end %}(@user_properties.try(&.empty?) != false){% if has_sub_ids %} && (@subscription_identifiers.try(&.empty?) != false){% end %}
+          {% for spec in singles %}@{{ spec[0].id }}.nil? && {% end %}(@user_properties.try(&.empty?) != false){% if has_sub_ids %} && (@subscription_identifiers.try(&.empty?) != false){% end %}
         end
 
         # Size of the property body, excluding its own length prefix.
         private def body_bytesize : Int32
           size = 0
-          {% for s in singles %}
-          unless (v = @{{ s[0].id }}).nil?
+          {% for spec in singles %}
+          unless (v = @{{ spec[0].id }}).nil?
             size += 1 # identifier
-            {% k = s[2] %}
+            {% k = spec[2] %}
             {% if k == :byte_bool || k == :byte_int %} size += 1
             {% elsif k == :two_byte_int %} size += 2
             {% elsif k == :four_byte_int %} size += 4
@@ -164,10 +164,10 @@ module MQTT
 
         def to_io(io : MQTT::Protocol::IO) : Nil
           io.write_variable_byte_int(body_bytesize)
-          {% for s in singles %}
-          unless (v = @{{ s[0].id }}).nil?
-            io.write_byte {{ s[1] }}u8
-            {% k = s[2] %}
+          {% for spec in singles %}
+          unless (v = @{{ spec[0].id }}).nil?
+            io.write_byte {{ spec[1] }}u8
+            {% k = spec[2] %}
             {% if k == :byte_bool %} io.write_byte(v ? 1u8 : 0u8)
             {% elsif k == :byte_int %} io.write_byte(v)
             {% elsif k == :two_byte_int %} io.write_int(v)
@@ -214,12 +214,12 @@ module MQTT
             id = io.read_byte
             consumed += 1
             case id
-            {% for s in singles %}
-            when {{ s[1] }}u8
-              unless props.{{ s[0].id }}.nil?
+            {% for spec in singles %}
+            when {{ spec[1] }}u8
+              unless props.{{ spec[0].id }}.nil?
                 raise Error::ProtocolError.new(0x82u8, "duplicate property 0x#{id.to_s(16)}")
               end
-              {% k = s[2] %}
+              {% k = spec[2] %}
               {% if k == :byte_bool %}
                 val = io.read_byte
                 # A boolean property with a value other than 0 or 1 is a
@@ -252,15 +252,15 @@ module MQTT
                 val = io.read_variable_byte_int
                 consumed += MQTT::Protocol::IO.variable_byte_int_size(val)
               {% end %}
-              {% if s[3] %}
+              {% if spec[3] %}
                 # Declared value constraint: out of range is a Protocol Error.
                 # Checked before assigning so the wire error is 0x82, not the
                 # setter's ArgumentError (that one is for local construction).
-                unless ({{ s[3] }}).includes?(val)
-                  raise Error::ProtocolError.new(0x82u8, "property 0x#{id.to_s(16)} value #{val} out of range {{ s[3] }}")
+                unless ({{ spec[3] }}).includes?(val)
+                  raise Error::ProtocolError.new(0x82u8, "property 0x#{id.to_s(16)} value #{val} out of range {{ spec[3] }}")
                 end
               {% end %}
-                props.{{ s[0].id }} = {% if k == :byte_bool %}val == 1u8{% else %}val{% end %}
+                props.{{ spec[0].id }} = {% if k == :byte_bool %}val == 1u8{% else %}val{% end %}
             {% end %}
             when 0x26u8
               pair = io.read_string_pair

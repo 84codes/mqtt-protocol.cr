@@ -32,7 +32,7 @@ module MQTT
 
       def initialize(@packet_id : UInt16, reason_codes : Array(ReasonCode)? = nil,
                      @properties : UnsubAckProperties = UnsubAckProperties.new)
-        @reason_codes = reason_codes.try { |a| a.empty? ? nil : a }
+        @reason_codes = reason_codes.try { |codes| codes.empty? ? nil : codes }
       end
 
       def remaining_length(version : MQTT::Protocol::Version) : UInt32

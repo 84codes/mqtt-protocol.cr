@@ -226,7 +226,8 @@ describe MQTT::Protocol::Connect do
     )
     decoded, _ = V5ConnectHelper.roundtrip(connect)
     decoded = decoded.should be_a MQTT::Protocol::Connect
-    decoded.will.not_nil!.properties.should eq will.properties
+    decoded_will = decoded.will.should be_a MQTT::Protocol::Will
+    decoded_will.properties.should eq will.properties
   end
 
   it "decodes a v3.1.1 CONNECT with no properties section" do
@@ -354,9 +355,9 @@ describe MQTT::Protocol::Connect do
       connect.clean_session?.should be_false
       connect.keepalive.should eq 30u16
       connect.username.should eq "user"
-      String.new(connect.password.not_nil!).should eq "pass"
+      String.new(connect.password.should be_a Bytes).should eq "pass"
       connect.properties.session_expiry_interval.should eq 10u32
-      will = connect.will.not_nil!
+      will = connect.will.should be_a MQTT::Protocol::Will
       will.topic.should eq "wt"
       String.new(will.payload).should eq "bye"
       will.qos.should eq 1u8

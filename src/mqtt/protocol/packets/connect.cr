@@ -66,17 +66,7 @@ module MQTT
         # and drive a read past its boundary.
         protocol_len = io.read_int
         protocol = io.read_string(protocol_len)
-        version_byte = io.read_byte
-
-        # MQIsdp is MQTT 3.1, MQTT level 4 is 3.1.1, MQTT level 5 is 5.0
-        version =
-          case {protocol, version_byte}
-          when {"MQTT", 0x04u8}   then Version::V3_1_1
-          when {"MQTT", 0x05u8}   then Version::V5
-          when {"MQIsdp", 0x03u8} then Version::V3_1
-          else
-            raise Error::UnacceptableProtocolVersion.new("invalid protocol: #{protocol.inspect} level #{version_byte}")
-          end
+        version = Version.from_protocol(protocol, io.read_byte)
         # The protocol level is what reveals the version; reframe so the rest of
         # CONNECT (and the IO the caller keeps for later packets) uses it. The
         # packet byte budget carries over to the reframed IO.
@@ -137,7 +127,6 @@ module MQTT
         self.new(client_id, clean_session, keepalive, username, password, will, version, properties)
       end
 
-      # ameba:disable Metrics/CyclomaticComplexity
       def to_io(io)
         # CONNECT establishes the version, so frame on @version regardless of
         # the IO handed in (the caller switches to a matching IO afterwards).

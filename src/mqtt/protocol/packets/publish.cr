@@ -45,14 +45,14 @@ module MQTT
       # stdlib's UTF-8 validation.
       private def validate_topic(bytes : Bytes) : Nil
         ascii = true
-        bytes.each do |b|
-          case b
+        bytes.each do |byte|
+          case byte
           when 0x23u8, 0x2Bu8 # '#' / '+'
             raise ArgumentError.new("Topic cannot contain wildcard")
           when 0x00u8
             raise ArgumentError.new("Topic cannot contain U+0000")
           else
-            ascii = false if b >= 0x80u8
+            ascii = false if byte >= 0x80u8
           end
         end
         return if ascii

@@ -19,6 +19,21 @@ module MQTT
         v3_1? ? "MQIsdp" : "MQTT"
       end
 
+      # Inverse of `protocol_name` plus the protocol level byte: the CONNECT
+      # variable header (3.1.2.1, 3.1.2.2) is the only place a connection
+      # announces its version. MQIsdp/3 is MQTT 3.1, MQTT/4 is 3.1.1, MQTT/5
+      # is 5.0; any other pair is an unacceptable protocol version
+      # ([MQTT-3.1.2-1], [MQTT-3.1.2-2]).
+      def self.from_protocol(name : String, level : UInt8) : Version
+        case {name, level}
+        when {"MQTT", 0x04u8}   then V3_1_1
+        when {"MQTT", 0x05u8}   then V5
+        when {"MQIsdp", 0x03u8} then V3_1
+        else
+          raise Error::UnacceptableProtocolVersion.new("invalid protocol: #{name.inspect} level #{level}")
+        end
+      end
+
       # Bytes a properties section contributes to a packet's size: its full
       # wire size in v5, nothing in v3 (no section on the wire). Lets the
       # arithmetic remaining_length(version) methods avoid branching on v5

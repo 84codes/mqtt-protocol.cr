@@ -56,7 +56,7 @@ module MQTT
           end
         end
         return if ascii
-        unless String.new(bytes).valid_encoding?
+        unless Unicode.valid?(bytes)
           raise ArgumentError.new("Topic must be well-formed UTF-8")
         end
       end

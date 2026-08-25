@@ -1,9 +1,9 @@
 require "./spec_helper"
 
 # Property value constraints (FABLE_FINDINGS.md 2.3): MQTT 5.0 declares a
-# Protocol Error for out-of-range property values. The constraints are part of
-# the property spec table in properties.cr, so every packet type enforces them
-# in the generated decoder.
+# Protocol Error for out-of-range property values. A constraint is declared as
+# the `range:` on the property's `prop` in properties.cr, so every packet
+# type that has the property enforces it in the generated decoder.
 private def decode_props(klass, bytes : Bytes)
   mio = IO::Memory.new(bytes.size)
   mio.write bytes
@@ -44,6 +44,13 @@ describe "v5 property value constraints" do
   it "rejects Maximum Packet Size 0" do
     # 3.1.2.11.4 / 3.2.2.3.6: Maximum Packet Size (0x27) value 0 is a Protocol Error.
     expect_out_of_range MQTT::Protocol::ConnectProperties, Bytes[0x05, 0x27, 0x00, 0x00, 0x00, 0x00]
+  end
+
+  it "rejects a repeated Subscription Identifier of 0" do
+    # 3.3.2.3.8: a Subscription Identifier has the range 1..268,435,455, so a
+    # repeated one of 0 is a Protocol Error just like the single SUBSCRIBE form
+    # (3.8.2.1.2).
+    expect_out_of_range MQTT::Protocol::PublishProperties, Bytes[0x02, 0x0B, 0x00]
   end
 
   it "still accepts in-range values" do
@@ -141,6 +148,18 @@ describe "property value constraints on construction" do
   it "rejects Subscription Identifier 0 in the constructor" do
     expect_raises(ArgumentError, /subscription_identifier/) do
       MQTT::Protocol::SubscribeProperties.new(subscription_identifier: 0u32)
+    end
+  end
+
+  it "rejects Subscription Identifier 0 in the repeatable list" do
+    # The range applies to every element, so a PUBLISH cannot be built with a
+    # list its own decoder would reject.
+    expect_raises(ArgumentError, /subscription_identifiers/) do
+      MQTT::Protocol::PublishProperties.new(subscription_identifiers: [1u32, 0u32])
+    end
+    props = MQTT::Protocol::PublishProperties.new
+    expect_raises(ArgumentError, /subscription_identifiers/) do
+      props.subscription_identifiers = [0u32]
     end
   end
 

@@ -63,9 +63,9 @@ module MQTT
         io.ensure_packet_budget(remaining_length)
         packet_id = io.read_int
 
-        # The subscription-identifier-0 rejection (3.8.2.1.2) is declared in
-        # the SubscribeProperties spec table and enforced by the generated
-        # decoder.
+        # The subscription-identifier-0 rejection (3.8.2.1.2) is declared as
+        # the range on SubscribeProperties#subscription_identifier and enforced
+        # by the generated decoder.
         properties = io.read_properties(SubscribeProperties)
 
         topic_filters = Array(TopicFilter).new

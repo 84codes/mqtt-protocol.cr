@@ -99,7 +99,7 @@ module MQTT
         end
         # The payload is whatever the packet has left.
         payload = io.read_bytes(io.remaining_in_packet)
-        self.new(topic, payload, packet_id, dup, qos, retain, properties)
+        new(topic, payload, packet_id, dup, qos, retain, properties)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end

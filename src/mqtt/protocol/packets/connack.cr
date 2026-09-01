@@ -103,7 +103,7 @@ module MQTT
         # v3 has no property section and v5 must consume the rest of the packet
         # exactly; both are enforced by the byte budget + finish_packet.
         properties = io.read_properties(ConnackProperties)
-        self.new(session_present, reason, properties)
+        new(session_present, reason, properties)
       end
 
       def to_io(io)

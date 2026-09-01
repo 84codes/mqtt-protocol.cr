@@ -44,7 +44,7 @@ module MQTT
           # Version-gated: v3 allows only 0-2 / 0x80 ([MQTT-3.9.3-2]).
           reason_codes << io.read_suback_reason(io.read_byte)
         end
-        self.new(reason_codes, packet_id, properties)
+        new(reason_codes, packet_id, properties)
       end
 
       def to_io(io)

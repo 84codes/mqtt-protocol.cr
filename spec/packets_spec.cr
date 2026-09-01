@@ -413,7 +413,7 @@ describe MQTT::Protocol::Packet do
 
           publish.topic.should eq topic
           publish.payload.should eq payload
-          publish.dup?.should eq false
+          publish.dup?.should be_false
         end
       end
 

@@ -12,7 +12,7 @@ module MQTT
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length == 2, "invalid length"
         packet_id = io.read_int
-        self.new(packet_id)
+        new(packet_id)
       end
 
       def to_io(io)

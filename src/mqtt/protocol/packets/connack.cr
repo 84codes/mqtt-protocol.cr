@@ -30,7 +30,7 @@ module MQTT
         return_code = io.read_byte
         decode_assert return_code < 6, "invalid return code: #{return_code}"
 
-        self.new(session_present, ReturnCode.new(return_code))
+        new(session_present, ReturnCode.new(return_code))
       end
 
       def to_io(io)

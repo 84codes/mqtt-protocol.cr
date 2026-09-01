@@ -11,8 +11,7 @@ module MQTT
           end
 
           if !@topic.index("#").nil? && !(@topic.ends_with?("/#") || @topic.size == 1)
-            raise ArgumentError.new("A multi-level wildcard TopicFilter
-                                     must have '#' as the last character")
+            raise ArgumentError.new("A multi-level wildcard TopicFilter must have '#' as the last character")
           end
 
           levels = @topic.split("/")
@@ -20,8 +19,7 @@ module MQTT
             level.count('+').positive? && level.size > 1
           end
           return if plus_levels.empty?
-          raise ArgumentError.new("A single-level wildcard TopicFilter most cover an entire level
-                                   on its own.")
+          raise ArgumentError.new("A single-level wildcard TopicFilter most cover an entire level on its own.")
         end
       end
 
@@ -49,7 +47,7 @@ module MQTT
           # 2 is UInt16 prefix topic length, the topic bytesize, 1 is the QoS
           bytes_to_read -= (2 + topic.bytesize + 1)
         end
-        self.new(topic_filters, packet_id)
+        new(topic_filters, packet_id)
       rescue ex : ArgumentError
         raise Error::PacketDecode.new(ex.message)
       end

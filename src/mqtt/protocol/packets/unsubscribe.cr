@@ -23,7 +23,7 @@ module MQTT
           topics << topic
           bytes_to_read -= (2 + topic.bytesize)
         end
-        self.new(topics, packet_id)
+        new(topics, packet_id)
       end
 
       def to_io(io)

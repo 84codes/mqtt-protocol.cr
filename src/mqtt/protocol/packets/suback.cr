@@ -41,7 +41,7 @@ module MQTT
           return_codes << ReturnCode.from_int(return_code)
           bytes_to_read -= 1
         end
-        self.new(return_codes, packet_id)
+        new(return_codes, packet_id)
       end
 
       def to_io(io)

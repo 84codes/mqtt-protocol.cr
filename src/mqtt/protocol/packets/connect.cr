@@ -86,10 +86,9 @@ module MQTT
         username = io.read_string if has_username
         password = io.read_bytes if has_password
 
-        self.new(client_id, clean_session, keepalive, username, password, will, version)
+        new(client_id, clean_session, keepalive, username, password, will, version)
       end
 
-      # ameba:disable Metrics/CyclomaticComplexity
       def to_io(io)
         # Remaining length is at least 10:
         # protocol name (str) + protocol version (byte) + connect flags (byte) + keep alive (int)
@@ -135,7 +134,7 @@ module MQTT
       def self.from_io(io : MQTT::Protocol::IO, qos : UInt8, retain : Bool)
         topic = io.read_string
         payload = io.read_bytes
-        self.new(topic, payload, qos, retain)
+        new(topic, payload, qos, retain)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end

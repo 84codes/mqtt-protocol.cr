@@ -105,7 +105,8 @@ module MQTT
       #
       #     prop <name> : <Type>?, id: <byte>, range: <range>
       #
-      #     id     the property identifier byte (2.2.2.2, Table 2.4)
+      #     id     the property identifier (2.2.2.2, Table 2.4), written as an
+      #            unsuffixed literal in 0x01..0x7f
       #     range  optional value constraint; outside it is a Protocol Error
       #
       # Everything else - the encoding, whether the property repeats - follows
@@ -140,13 +141,28 @@ module MQTT
           raise "#{prop_name} is declared twice" if table[key].any? { |other| other[:name] == name }
           raise "#{prop_name}: every property is optional, declare it as #{base}?" unless optional
           raise "#{prop_name}: needs an id:, or it would never reach the wire" if id.nil?
+          # An identifier is a Variable Byte Integer (2.2.2.2), but both the
+          # encoder's `write_byte` and the decoder's `when` arm are one byte
+          # wide, so a one byte VBI is the whole range available here - roomy,
+          # since no assigned identifier comes near 0x7f.
+          raise "#{prop_name}: id must be an integer literal, got #{id}" unless id.is_a?(NumberLiteral)
+          raise "#{prop_name}: id must be a whole number, got #{id}" if id.kind == :f32 || id.kind == :f64
+          # Insisting on the plain spelling is not tidiness: a literal carries
+          # its type, so `0x11u8` is neither `==` to `0x11` (the duplicate check
+          # below would miss the collision) nor pastable - it expands to
+          # `17_u8u8`, a syntax error blamed on this DSL rather than on the
+          # declaration. An unsuffixed literal stringifies as a bare decimal,
+          # which makes both safe.
+          raise "#{prop_name}: id must be unsuffixed (0x11, not #{id}); the u8 is the DSL's job" unless id.kind == :i32
+          raise "#{prop_name}: id #{id} is not a property identifier, they run 0x01..0x7f" unless 1 <= id && id <= 127
           if range
             # Bool is not an integer type either, but "drop it" is the useful
             # advice there, so it answers first.
             raise "#{prop_name}: a Bool property is already constrained to 0/1, drop the range" if element_name == "Bool"
             raise "#{prop_name}: a range is only enforceable on an integer property" unless MQTT::Protocol::Properties::INTEGER_TYPES.includes?(element_name)
           end
-          # Identifiers compare as numbers, so 0x11 and 17 are the same id.
+          # Every id is a bare decimal by now, so identifiers compare as numbers:
+          # 0x11 and 17 are the same id.
           if other = table[key].find { |o| o[:id] == id }
             raise "#{@type}: #{other[:name].id} and #{name.id} declare the same property identifier"
           end

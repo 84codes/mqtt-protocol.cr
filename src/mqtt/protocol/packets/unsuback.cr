@@ -47,7 +47,7 @@ module MQTT
         packet_id = io.read_int
         # v3 UNSUBACK is a bare packet id with no payload at all; any v3
         # payload bytes are rejected by the byte budget + finish_packet.
-        return self.new(packet_id) unless io.unsuback_payload?
+        return new(packet_id) unless io.unsuback_payload?
         properties = io.read_properties(UnsubAckProperties)
         reason_codes = Array(ReasonCode).new
         while io.remaining_in_packet > 0
@@ -55,7 +55,7 @@ module MQTT
           reason_codes << (ReasonCode.from_value?(byte) ||
                            raise Error::ProtocolError.new(0x81u8, "invalid unsuback reason code #{byte}"))
         end
-        self.new(packet_id, reason_codes, properties)
+        new(packet_id, reason_codes, properties)
       end
 
       def to_io(io)

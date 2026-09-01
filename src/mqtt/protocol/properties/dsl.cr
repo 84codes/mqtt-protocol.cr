@@ -127,8 +127,8 @@ module MQTT
           # from another macro rather than written out, so both spellings have
           # to count as nil here.
           nils = ["Nil", "::Nil"]
-          optional = type.is_a?(Union) && type.types.any? { |t| nils.includes?(t.stringify) }
-          base = optional ? type.types.reject { |t| nils.includes?(t.stringify) }.first : type
+          optional = type.is_a?(Union) && type.types.any? { |union_type| nils.includes?(union_type.stringify) }
+          base = optional ? type.types.reject { |union_type| nils.includes?(union_type.stringify) }.first : type
           # Only Array(T) repeats; any other generic (a `Slice(UInt8)` written
           # out instead of `Bytes`, say) falls through to the encoding check
           # below, which names it in the error.
@@ -163,7 +163,7 @@ module MQTT
           end
           # Every id is a bare decimal by now, so identifiers compare as numbers:
           # 0x11 and 17 are the same id.
-          if other = table[key].find { |o| o[:id] == id }
+          if other = table[key].find { |existing| existing[:id] == id }
             raise "#{@type}: #{other[:name].id} and #{name.id} declare the same property identifier"
           end
 
@@ -223,7 +223,7 @@ module MQTT
       # body to have expanded first.
       macro generate_initializer
         {% specs = MQTT::Protocol::Properties::REGISTRY[@type.name.stringify] || [] of Nil %}
-        {% ordered = specs.reject { |s| s[:repeated] } + specs.select { |s| s[:repeated] } %}
+        {% ordered = specs.reject { |spec| spec[:repeated] } + specs.select { |spec| spec[:repeated] } %}
 
         def initialize(*,
                        {% for s in ordered %}
@@ -343,7 +343,7 @@ module MQTT
       private def body_bytesize : Int32
         {% begin %}
           {% specs = MQTT::Protocol::Properties::REGISTRY[@type.name.stringify] || [] of Nil %}
-          {% ordered = specs.reject { |s| s[:repeated] } + specs.select { |s| s[:repeated] } %}
+          {% ordered = specs.reject { |spec| spec[:repeated] } + specs.select { |spec| spec[:repeated] } %}
           size = 0
           {% for s in ordered %}
           {% var_int = s[:element_name] == "VarInt" %}
@@ -374,7 +374,7 @@ module MQTT
       def to_io(io : MQTT::Protocol::IO) : Nil
         {% begin %}
           {% specs = MQTT::Protocol::Properties::REGISTRY[@type.name.stringify] || [] of Nil %}
-          {% ordered = specs.reject { |s| s[:repeated] } + specs.select { |s| s[:repeated] } %}
+          {% ordered = specs.reject { |spec| spec[:repeated] } + specs.select { |spec| spec[:repeated] } %}
           io.write_variable_byte_int(body_bytesize)
           {% for s in ordered %}
           {% var_int = s[:element_name] == "VarInt" %}
@@ -403,7 +403,7 @@ module MQTT
       protected def decode_properties(io : MQTT::Protocol::IO, remaining : UInt32) : Nil
         {% begin %}
           {% specs = MQTT::Protocol::Properties::REGISTRY[@type.name.stringify] || [] of Nil %}
-          {% ordered = specs.reject { |s| s[:repeated] } + specs.select { |s| s[:repeated] } %}
+          {% ordered = specs.reject { |spec| spec[:repeated] } + specs.select { |spec| spec[:repeated] } %}
           # Direct calls (outside Packet.read_body) arm the byte budget from the
           # explicit bound so field reads cannot over-read past it.
           io.ensure_packet_budget(remaining)

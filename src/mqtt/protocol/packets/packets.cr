@@ -3,13 +3,13 @@ require "../io"
 macro decode_assert(condition, err, *args)
   {% if (err.class_name == "StringLiteral" || err.class_name == "StringInterpolation") %}
     # err is a string
-    ({{condition}} || raise Error::PacketDecode.new {{err}})
+    ({{ condition }} || raise Error::PacketDecode.new {{ err }})
   {% elsif (err.class_name == "Call") %}
     # err is a call that we assume returns a string e.g. sprintf()
-    ({{condition}} || raise Error::PacketDecode.new {{err}})
+    ({{ condition }} || raise Error::PacketDecode.new {{ err }})
   {% else %}
     # here we just assume it's a class name
-    ({{condition}} || raise {{err}}.new({{args.splat}}))
+    ({{ condition }} || raise {{ err }}.new({{ args.splat }}))
   {% end %}
 end
 
@@ -46,7 +46,7 @@ module MQTT
         end
 
         def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-          decode_assert flags == {{wire_flags}}, MQTT::Protocol::Error::InvalidFlags, flags
+          decode_assert flags == {{ wire_flags }}, MQTT::Protocol::Error::InvalidFlags, flags
           # The packet id is always present (2 bytes); reject a short header
           # before reading it so a truncated ack can't over-read the next packet.
           decode_assert remaining_length >= 2, "invalid length #{remaining_length} for ack"
@@ -63,7 +63,7 @@ module MQTT
         end
 
         def to_io(io)
-          io.write_ack((TYPE << 4) | {{wire_flags}}, packet_id, reason_code.value, properties)
+          io.write_ack((TYPE << 4) | {{ wire_flags }}, packet_id, reason_code.value, properties)
         end
       end
 
@@ -112,7 +112,7 @@ module MQTT
                  end
         io.finish_packet
         packet
-      rescue ex : ::IO::EOFError
+      rescue ::IO::EOFError
         raise Error::PacketDecode.new "truncated packet"
       ensure
         # Also on error paths, so a stale budget never charges the next
@@ -127,7 +127,7 @@ module MQTT
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length.zero?, "invalid length"
-        self.new
+        new
       end
 
       def remaining_length(version : Version) : UInt32

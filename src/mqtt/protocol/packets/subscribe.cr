@@ -19,8 +19,7 @@ module MQTT
           end
 
           if !@topic.index("#").nil? && !(@topic.ends_with?("/#") || @topic.size == 1)
-            raise ArgumentError.new("A multi-level wildcard TopicFilter
-                                     must have '#' as the last character")
+            raise ArgumentError.new("A multi-level wildcard TopicFilter must have '#' as the last character")
           end
 
           levels = @topic.split("/")
@@ -28,8 +27,7 @@ module MQTT
             level.count('+').positive? && level.size > 1
           end
           return if plus_levels.empty?
-          raise ArgumentError.new("A single-level wildcard TopicFilter most cover an entire level
-                                   on its own.")
+          raise ArgumentError.new("A single-level wildcard TopicFilter most cover an entire level on its own.")
         end
 
         def no_local?
@@ -86,7 +84,7 @@ module MQTT
         if topic_filters.empty?
           raise Error::ProtocolError.new(0x82u8, "SUBSCRIBE must contain at least one topic filter")
         end
-        self.new(topic_filters, packet_id, properties)
+        new(topic_filters, packet_id, properties)
       rescue ex : ArgumentError
         raise Error::PacketDecode.new(ex.message)
       end

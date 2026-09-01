@@ -124,7 +124,7 @@ module MQTT
         # Exact consumption of remaining_length (section 2.1.4) is enforced
         # centrally by the dispatcher's finish_packet.
 
-        self.new(client_id, clean_session, keepalive, username, password, will, version, properties)
+        new(client_id, clean_session, keepalive, username, password, will, version, properties)
       end
 
       def to_io(io)
@@ -176,7 +176,7 @@ module MQTT
         properties = io.read_properties(WillProperties)
         topic = io.read_string
         payload = io.read_bytes
-        self.new(topic, payload, qos, retain, properties)
+        new(topic, payload, qos, retain, properties)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end

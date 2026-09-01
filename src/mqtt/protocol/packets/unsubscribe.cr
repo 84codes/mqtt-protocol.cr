@@ -33,7 +33,7 @@ module MQTT
         if topics.empty?
           raise Error::ProtocolError.new(0x82u8, "UNSUBSCRIBE must contain at least one topic filter")
         end
-        self.new(topics, packet_id, properties)
+        new(topics, packet_id, properties)
       end
 
       def to_io(io)

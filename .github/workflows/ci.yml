@@ -7,11 +7,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: crystal-ameba/github-action@v0.12.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: crystal-lang/install-crystal@v1
+      - run: shards install --ignore-crystal-version
       - run: crystal tool format --check
+      - name: Build ameba
+        run: |
+          mkdir -p bin
+          crystal build --no-debug lib/ameba/bin/ameba.cr -o bin/ameba
+      - run: bin/ameba
 
   spec:
     name: Spec

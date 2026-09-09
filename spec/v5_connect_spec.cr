@@ -3,7 +3,7 @@ require "./spec_helper"
 # CONNECT / CONNACK at protocol level 0x05 (MQTT5_FINDINGS.md section 4).
 #
 # CONNECT decode is what reveals the version: reading level 0x05 means the rest
-# of the connection is framed by an IO::V5 (see IO.read_connect), so every later
+# of the connection is framed for v5 (see IO#read_connect), so every later
 # from_io/to_io reads/writes a properties section and reason-code byte.
 
 module V5ConnectHelper
@@ -12,10 +12,10 @@ module V5ConnectHelper
   # Encode on a v5 IO, decode the same bytes on a fresh v5 IO.
   def self.roundtrip(packet)
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V5.new(mio)
+    io = MQTT::Protocol::IO.v5(mio)
     packet.to_io(io)
     mio.rewind
-    rio = MQTT::Protocol::IO::V5.new(mio)
+    rio = MQTT::Protocol::IO.v5(mio)
     {MQTT::Protocol::Packet.from_io(rio), rio}
   end
 end
@@ -38,7 +38,7 @@ end
 describe MQTT::Protocol::Connect do
   it "detects protocol level 0x05 and bootstraps a V5 IO for the connection" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     io.write_byte 0b0001_0000u8 # CONNECT
     io.write_remaining_length 13u8
     io.write_string "MQTT"      # 0x00 0x04 M Q T T
@@ -49,41 +49,68 @@ describe MQTT::Protocol::Connect do
     io.write_string ""          # empty client id
     mio.rewind
 
-    # read_connect detects the version from the wire and hands back the IO to
-    # use for every subsequent packet.
-    connect, conn_io = MQTT::Protocol::IO.read_connect(mio)
+    # read_connect detects the version from the wire and leaves the IO framing
+    # for it, for every subsequent packet.
+    conn_io = MQTT::Protocol::IO.new(mio)
+    connect = conn_io.read_connect
     connect.version.should eq MQTT::Protocol::Version::V5
-    conn_io.should be_a MQTT::Protocol::IO::V5
     conn_io.version.should eq MQTT::Protocol::Version::V5
+    conn_io.negotiated?.should be_true
     connect.properties.empty?.should be_true
   end
 
-  it "reads CONNECT on a caller-owned bootstrap IO and reframes (instance method)" do
+  # The reason the IO switches framing in place rather than handing back a new
+  # one: a CONNECT that fails *after* the protocol level byte must be answered
+  # with a CONNACK framed for the version the client asked for. A design that
+  # rebinds only on success leaves the rejecting server holding the v3 boot IO
+  # and puts a v3 return code on the wire for a v5 client.
+  it "frames a rejection CONNACK for the version a failing v5 CONNECT announced" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
-    io.write_byte 0b0001_0000u8
-    io.write_remaining_length 13u8
-    io.write_string "MQTT"
-    io.write_byte 0x05u8
-    io.write_byte 0b0000_0010u8
-    io.write_int 60u16
-    io.write_byte 0x00u8
-    io.write_string ""
+    w = MQTT::Protocol::IO.v5(mio)
+    w.write_byte 0b0001_0000u8
+    # MQTT(2+4) + level(1) + flags(1) + keepalive(2) + props(1) + id(2+0) = 13
+    w.write_remaining_length 13u8
+    w.write_string "MQTT"
+    w.write_byte 0x05u8        # level 5 -> version is known from here on
+    w.write_byte 0b0000_0000u8 # clean start FALSE with an empty client id
+    w.write_int 60u16
+    w.write_byte 0x00u8
+    w.write_string "" # empty client id -> IdentifierRejected
     mio.rewind
 
-    # The caller keeps the boot IO; the tuple only rebinds on success, so a
-    # rejecting server still has the v3 IO to frame a CONNACK on the error path.
-    boot = MQTT::Protocol::IO::V3.new(mio)
-    connect, conn_io = boot.read_connect
-    connect.version.should eq MQTT::Protocol::Version::V5
-    conn_io.should be_a MQTT::Protocol::IO::V5
+    sink = IO::Memory.new
+    io = MQTT::Protocol::IO.new(IO::Stapled.new(mio, sink))
+    expect_raises(MQTT::Protocol::Error::Connect) { io.read_connect }
+
+    # The version survived the failure, so the CONNACK is v5-framed.
+    io.version.should eq MQTT::Protocol::Version::V5
+    io.write_packet MQTT::Protocol::Connack.new(
+      false, MQTT::Protocol::Connack::ReasonCode::ClientIdentifierNotValid)
+    # 0x20, remaining 3, flags 0, reason 0x85, properties length 0
+    sink.to_slice.should eq Bytes[0x20, 0x03, 0x00, 0x85, 0x00]
+  end
+
+  it "frames a rejection CONNACK as v3 when the version was never revealed" do
+    mio = IO::Memory.new
+    mio.write Bytes[0x10, 0x02, 0x00, 0x00] # CONNECT with a truncated name
+    mio.rewind
+
+    sink = IO::Memory.new
+    io = MQTT::Protocol::IO.new(IO::Stapled.new(mio, sink))
+    expect_raises(MQTT::Protocol::Error) { io.read_connect }
+
+    io.negotiated?.should be_false
+    io.write_packet MQTT::Protocol::Connack.new(
+      false, MQTT::Protocol::Connack::ReasonCode::UnsupportedProtocolVersion)
+    # v3 CONNACK: 0x20, remaining 2, flags 0, return code 1
+    sink.to_slice.should eq Bytes[0x20, 0x02, 0x00, 0x01]
   end
 
   it "raises PacketDecode (not TypeCastError) when the first packet is not CONNECT [MQTT-3.1.0-1]" do
     mio = IO::Memory.new(2)
     mio.write Bytes[0xC0, 0x00] # PINGREQ, a well-formed non-CONNECT packet
     mio.rewind
-    boot = MQTT::Protocol::IO::V3.new(mio)
+    boot = MQTT::Protocol::IO.v3(mio)
     expect_raises(MQTT::Protocol::Error::PacketDecode, /must be CONNECT/) { boot.read_connect }
   end
 
@@ -182,7 +209,7 @@ describe MQTT::Protocol::Connect do
 
   it "reads Will properties before the will topic [MQTT-3.1.3-1]" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     io.write_byte 0b0001_0000u8 # CONNECT
     io.write_remaining_length 32u8
     io.write_string "MQTT"
@@ -196,7 +223,7 @@ describe MQTT::Protocol::Connect do
     io.write_bytes "bye".to_slice # will payload
     mio.rewind
 
-    rio = MQTT::Protocol::IO::V3.new(mio)
+    rio = MQTT::Protocol::IO.v3(mio)
     connect = MQTT::Protocol::Packet.from_io(rio).as(MQTT::Protocol::Connect)
     will = connect.will.should_not be_nil
     will.topic.should eq "topic"
@@ -232,7 +259,7 @@ describe MQTT::Protocol::Connect do
 
   it "decodes a v3.1.1 CONNECT with no properties section" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     io.write_byte 0b0001_0000u8
     io.write_remaining_length 12u8
     io.write_string "MQTT"
@@ -242,7 +269,7 @@ describe MQTT::Protocol::Connect do
     io.write_string ""
     mio.rewind
 
-    rio = MQTT::Protocol::IO::V3.new(mio)
+    rio = MQTT::Protocol::IO.v3(mio)
     connect = MQTT::Protocol::Packet.from_io(rio).as(MQTT::Protocol::Connect)
     connect.version.should eq MQTT::Protocol::Version::V3_1_1
     rio.version.should eq MQTT::Protocol::Version::V3_1_1
@@ -398,7 +425,7 @@ describe MQTT::Protocol::Connack do
 
   it "encodes a v5 CONNACK with reason code and properties section" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V5.new(mio)
+    io = MQTT::Protocol::IO.v5(mio)
     connack = MQTT::Protocol::Connack.new(
       session_present: false,
       reason_code: MQTT::Protocol::Connack::ReasonCode::Success,
@@ -410,7 +437,7 @@ describe MQTT::Protocol::Connack do
 
   it "encodes a v3 CONNACK as a return code byte with no properties" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     connack = MQTT::Protocol::Connack.new(
       session_present: false,
       reason_code: MQTT::Protocol::Connack::ReasonCode::Success,
@@ -433,10 +460,10 @@ describe MQTT::Protocol::Connack do
       properties: props,
     )
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V5.new(mio)
+    io = MQTT::Protocol::IO.v5(mio)
     connack.to_io(io)
     mio.rewind
-    rio = MQTT::Protocol::IO::V5.new(mio)
+    rio = MQTT::Protocol::IO.v5(mio)
     decoded = MQTT::Protocol::Packet.from_io(rio).as(MQTT::Protocol::Connack)
     decoded.session_present?.should be_true
     decoded.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::Success
@@ -447,7 +474,7 @@ describe MQTT::Protocol::Connack do
     mio = IO::Memory.new
     mio.write Bytes[0x20, 0x02, 0x00, 0x05] # NotAuthorized in v3 == 5
     mio.rewind
-    rio = MQTT::Protocol::IO::V3.new(mio)
+    rio = MQTT::Protocol::IO.v3(mio)
     decoded = MQTT::Protocol::Packet.from_io(rio).as(MQTT::Protocol::Connack)
     decoded.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::NotAuthorized
   end
@@ -518,9 +545,9 @@ describe "v5 CONNECT password without username" do
       version: MQTT::Protocol::Version::V5,
     )
     mio = IO::Memory.new
-    MQTT::Protocol::IO::V5.new(mio).write_packet(connect)
+    MQTT::Protocol::IO.v5(mio).write_packet(connect)
     mio.rewind
-    decoded, _io = MQTT::Protocol::IO.read_connect(mio)
+    decoded = MQTT::Protocol::IO.new(mio).read_connect
     decoded.username.should be_nil
     decoded.password.should eq "token".to_slice
   end

@@ -9,7 +9,7 @@ require "./spec_helper"
 
 private def encode_v5(packet)
   mio = IO::Memory.new
-  io = MQTT::Protocol::IO::V5.new(mio)
+  io = MQTT::Protocol::IO.v5(mio)
   packet.to_io(io)
   mio.to_slice
 end
@@ -18,13 +18,13 @@ private def decode_v5(bytes : Bytes)
   mio = IO::Memory.new(bytes.size)
   mio.write bytes
   mio.rewind
-  io = MQTT::Protocol::IO::V5.new(mio)
+  io = MQTT::Protocol::IO.v5(mio)
   MQTT::Protocol::Packet.from_io(io)
 end
 
 private def encode_v3(packet)
   mio = IO::Memory.new
-  io = MQTT::Protocol::IO::V3.new(mio)
+  io = MQTT::Protocol::IO.v3(mio)
   packet.to_io(io)
   mio.to_slice
 end
@@ -76,7 +76,7 @@ describe MQTT::Protocol::Disconnect do
 
   it "encodes a v3 DISCONNECT as an empty payload" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::Disconnect.new.to_io(io)
     mio.to_slice.should eq Bytes[0xE0, 0x00]
   end

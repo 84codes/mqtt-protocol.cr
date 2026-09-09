@@ -74,10 +74,10 @@ module MQTT
         protocol = protocol_buf.to_slice[0, protocol_len]
         io.read_fully(protocol)
         version = Version.from_protocol(protocol, io.read_byte)
-        # The protocol level is what reveals the version; reframe so the rest of
-        # CONNECT (and the IO the caller keeps for later packets) uses it. The
-        # packet byte budget carries over to the reframed IO.
-        io = io.reframe(version)
+        # The protocol level is what reveals the version; switch the IO's framing
+        # here so the rest of CONNECT, every later packet, and any CONNACK
+        # rejecting this very CONNECT all use it.
+        io.negotiate(version)
 
         connect_flags = io.read_byte
         decode_assert connect_flags.bit(0) == 0, "reserved connect flag set"
@@ -136,8 +136,9 @@ module MQTT
 
       def to_io(io)
         # CONNECT establishes the version, so frame on @version regardless of
-        # the IO handed in (the caller switches to a matching IO afterwards).
-        io = io.reframe(@version)
+        # what the IO was framing for; it keeps that framing for the rest of the
+        # connection, which is what a client wants after sending its CONNECT.
+        io.negotiate(@version)
         connect_flags = 0u8
         if w = will
           connect_flags |= 0b0000_0100u8

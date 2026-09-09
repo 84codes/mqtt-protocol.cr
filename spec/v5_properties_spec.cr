@@ -14,7 +14,7 @@ require "./spec_helper"
 
 private def roundtrip(props)
   mio = IO::Memory.new
-  io = MQTT::Protocol::IO::V3.new(mio)
+  io = MQTT::Protocol::IO.v3(mio)
   props.to_io(io)
   mio.rewind
   props.class.from_io(io, props.bytesize.to_u32)
@@ -23,7 +23,7 @@ end
 describe MQTT::Protocol::ConnectProperties do
   it "encodes an empty section as a single zero VBI length" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::ConnectProperties.new.to_io(io)
     mio.to_slice.should eq Bytes[0x00]
   end
@@ -35,21 +35,21 @@ describe MQTT::Protocol::ConnectProperties do
 
   it "encodes Session Expiry Interval (0x11, four byte int)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 10u32).to_io(io)
     mio.to_slice.should eq Bytes[0x05, 0x11, 0x00, 0x00, 0x00, 0x0A]
   end
 
   it "encodes Receive Maximum (0x21, two byte int)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::ConnectProperties.new(receive_maximum: 20u16).to_io(io)
     mio.to_slice.should eq Bytes[0x03, 0x21, 0x00, 0x14]
   end
 
   it "encodes a single User Property (0x26, string pair)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::ConnectProperties.new(user_properties: [{"foo", "bar"}]).to_io(io)
     mio.to_slice.should eq Bytes[
       0x0B, 0x26,
@@ -82,7 +82,7 @@ describe MQTT::Protocol::ConnectProperties do
     mio = IO::Memory.new
     mio.write Bytes[0x02, 0x99, 0x00] # len=2, id 0x99 is not a CONNECT property
     mio.rewind
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     expect_raises(MQTT::Protocol::Error::ProtocolError) do
       MQTT::Protocol::ConnectProperties.from_io(io, mio.size.to_u32)
     end
@@ -95,7 +95,7 @@ describe MQTT::Protocol::ConnectProperties do
       0x11, 0x00, 0x00, 0x00, 0x01,
       0x11, 0x00, 0x00, 0x00, 0x02]
     mio.rewind
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     expect_raises(MQTT::Protocol::Error::ProtocolError) do
       MQTT::Protocol::ConnectProperties.from_io(io, mio.size.to_u32)
     end
@@ -105,7 +105,7 @@ end
 describe MQTT::Protocol::WillProperties do
   it "encodes Will Delay Interval (0x18, four byte int)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::WillProperties.new(will_delay_interval: 30u32).to_io(io)
     mio.to_slice.should eq Bytes[0x05, 0x18, 0x00, 0x00, 0x00, 0x1E]
   end
@@ -127,7 +127,7 @@ end
 describe MQTT::Protocol::ConnackProperties do
   it "encodes Maximum QoS (0x24, byte)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::ConnackProperties.new(maximum_qos: 1u8).to_io(io)
     mio.to_slice.should eq Bytes[0x02, 0x24, 0x01]
   end
@@ -159,21 +159,21 @@ end
 describe MQTT::Protocol::PublishProperties do
   it "encodes Topic Alias (0x23, two byte int)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::PublishProperties.new(topic_alias: 5u16).to_io(io)
     mio.to_slice.should eq Bytes[0x03, 0x23, 0x00, 0x05]
   end
 
   it "encodes a single Subscription Identifier (0x0B, variable byte int)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::PublishProperties.new(subscription_identifiers: [1u32]).to_io(io)
     mio.to_slice.should eq Bytes[0x02, 0x0B, 0x01]
   end
 
   it "encodes repeated Subscription Identifiers in order" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::PublishProperties.new(subscription_identifiers: [1u32, 2u32]).to_io(io)
     mio.to_slice.should eq Bytes[0x04, 0x0B, 0x01, 0x0B, 0x02]
   end
@@ -196,7 +196,7 @@ end
 describe MQTT::Protocol::SubscribeProperties do
   it "encodes a single Subscription Identifier (0x0B, variable byte int)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::SubscribeProperties.new(subscription_identifier: 128u32).to_io(io)
     # VBI(128) = 0x80 0x01, so body = 0x0B 0x80 0x01 (3 bytes)
     mio.to_slice.should eq Bytes[0x03, 0x0B, 0x80, 0x01]
@@ -214,7 +214,7 @@ end
 describe MQTT::Protocol::DisconnectProperties do
   it "encodes Reason String (0x1F, utf8 string)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::DisconnectProperties.new(reason_string: "bye").to_io(io)
     mio.to_slice.should eq Bytes[0x06, 0x1F, 0x00, 0x03, 'b'.ord, 'y'.ord, 'e'.ord]
   end
@@ -233,7 +233,7 @@ end
 describe MQTT::Protocol::AuthProperties do
   it "encodes Authentication Method (0x15, utf8 string)" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::AuthProperties.new(authentication_method: "SCRAM-SHA-1").to_io(io)
     mio.to_slice.should eq Bytes[
       0x0E, 0x15, 0x00, 0x0B,

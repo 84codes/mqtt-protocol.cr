@@ -6,13 +6,13 @@ require "./spec_helper"
 # existing wildcard check.
 private def decode_publish_topic(topic : Bytes)
   mio = IO::Memory.new
-  io = MQTT::Protocol::IO::V3.new(mio)
+  io = MQTT::Protocol::IO.v3(mio)
   io.write_byte 0x30u8 # PUBLISH, QoS 0
   io.write_remaining_length(2 + topic.size + 1)
   io.write_bytes topic
   io.write_byte 0x78u8 # 1-byte payload
   mio.rewind
-  MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO::V3.new(mio))
+  MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO.v3(mio))
 end
 
 private def expect_rejected(topic : Bytes)

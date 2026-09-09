@@ -135,41 +135,58 @@ describe MQTT::Protocol::IO::Budget do
     end
   end
 
-  # Why Budget is a shared box and not a plain ivar: CONNECT reveals the
-  # version mid-packet, so `IO#reframe` hands the same budget to the new IO
-  # and the dispatcher's final check sees every byte both IOs consumed.
-  describe "shared across a reframe" do
-    it "carries charges from the old IO to the reframed one" do
+  # CONNECT reveals the version mid-packet, so the IO switches framing while a
+  # packet read is in flight. The budget must survive that switch: every field
+  # after the protocol level byte is read by the *new* framing but still belongs
+  # to the packet the *old* one started, so a reset budget would let the tail of
+  # a CONNECT run off the end of the packet.
+  describe "survives the framing switch mid-CONNECT" do
+    # A v5 CONNECT whose declared remaining_length is one byte short of its
+    # fields, followed by bytes an unbounded read would happily consume. Every
+    # read after the level byte happens under the negotiated v5 framing, so this
+    # only raises if the budget carried over.
+    it "bounds the CONNECT tail at the declared remaining length" do
       mio = IO::Memory.new
-      mio.write Bytes[0xAA, 0xBB, 0xCC, 0xDD]
+      w = MQTT::Protocol::IO.v5(mio)
+      w.write_byte 0b0001_0000u8 # CONNECT
+      # MQTT(2+4) + level(1) + flags(1) + keepalive(2) + props(1) + id(2+2) = 15
+      w.write_remaining_length 14 # one short
+      w.write_string "MQTT"
+      w.write_byte 0x05u8        # protocol level 5 -> framing switches here
+      w.write_byte 0b0000_0010u8 # clean start
+      w.write_int 60u16
+      w.write_byte 0x00u8 # properties length 0
+      w.write_string "ab"
+      mio.write Bytes[0xFF, 0xFF, 0xFF] # would-be next packet
       mio.rewind
 
-      budget = Budget.new
-      budget.start(4u32)
-      v3 = MQTT::Protocol::IO::V3.new(mio, budget: budget)
-      v3.read_byte
-
-      v5 = v3.reframe(MQTT::Protocol::Version::V5)
-      v5.should be_a MQTT::Protocol::IO::V5
-      v5.remaining_in_packet.should eq 3u32
-
-      v5.read_int
-      v3.remaining_in_packet.should eq 1u32
-      budget.remaining.should eq 1u32
+      ex = expect_raises(MQTT::Protocol::Error::ProtocolError) do
+        MQTT::Protocol::IO.new(mio).read_connect
+      end
+      ex.reason_code.should eq 0x81u8
     end
 
-    it "bounds the reframed IO at the original packet's boundary" do
+    it "accepts the same CONNECT when the remaining length is honest" do
       mio = IO::Memory.new
-      mio.write Bytes[0xAA, 0xBB, 0xCC, 0xDD]
+      w = MQTT::Protocol::IO.v5(mio)
+      w.write_byte 0b0001_0000u8
+      w.write_remaining_length 15
+      w.write_string "MQTT"
+      w.write_byte 0x05u8
+      w.write_byte 0b0000_0010u8
+      w.write_int 60u16
+      w.write_byte 0x00u8
+      w.write_string "ab"
+      mio.write Bytes[0xFF, 0xFF, 0xFF]
       mio.rewind
 
-      budget = Budget.new
-      budget.start(1u32)
-      io = MQTT::Protocol::IO::V3.new(mio, budget: budget).reframe(MQTT::Protocol::Version::V5)
-
-      ex = expect_raises(MQTT::Protocol::Error::ProtocolError) { io.read_int }
-      ex.reason_code.should eq 0x81u8
-      mio.pos.should eq 0
+      io = MQTT::Protocol::IO.new(mio)
+      connect = io.read_connect
+      connect.client_id.should eq "ab"
+      connect.version.should eq MQTT::Protocol::Version::V5
+      io.version.should eq MQTT::Protocol::Version::V5
+      # The trailing bytes are left for the next read, not swallowed.
+      io.remaining_in_packet.should eq 0u32
     end
   end
 end

@@ -12,7 +12,7 @@ private def decode_v5(bytes : Bytes)
   mio = IO::Memory.new(bytes.size)
   mio.write bytes
   mio.rewind
-  io = MQTT::Protocol::IO::V5.new(mio)
+  io = MQTT::Protocol::IO.v5(mio)
   MQTT::Protocol::Packet.from_io(io)
 end
 
@@ -64,7 +64,7 @@ private def assert_stops_at(bytes : Bytes, pos : Int32)
   mio = IO::Memory.new(bytes.size)
   mio.write bytes
   mio.rewind
-  io = MQTT::Protocol::IO::V5.new(mio)
+  io = MQTT::Protocol::IO.v5(mio)
   # Overrunning the packet boundary is a Malformed Packet (reason 0x81).
   ex = expect_raises(MQTT::Protocol::Error::ProtocolError) { MQTT::Protocol::Packet.from_io(io) }
   ex.reason_code.should eq 0x81u8

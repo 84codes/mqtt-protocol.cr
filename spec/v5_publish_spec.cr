@@ -12,7 +12,7 @@ require "./spec_helper"
 
 private def encode_v5(packet)
   mio = IO::Memory.new
-  io = MQTT::Protocol::IO::V5.new(mio)
+  io = MQTT::Protocol::IO.v5(mio)
   packet.to_io(io)
   mio.to_slice
 end
@@ -21,13 +21,13 @@ private def decode_v5(bytes : Bytes)
   mio = IO::Memory.new(bytes.size)
   mio.write bytes
   mio.rewind
-  io = MQTT::Protocol::IO::V5.new(mio)
+  io = MQTT::Protocol::IO.v5(mio)
   MQTT::Protocol::Packet.from_io(io)
 end
 
 private def encode_v3(packet)
   mio = IO::Memory.new
-  io = MQTT::Protocol::IO::V3.new(mio)
+  io = MQTT::Protocol::IO.v3(mio)
   packet.to_io(io)
   mio.to_slice
 end
@@ -36,7 +36,7 @@ private def decode_v3(bytes : Bytes)
   mio = IO::Memory.new(bytes.size)
   mio.write bytes
   mio.rewind
-  io = MQTT::Protocol::IO::V3.new(mio)
+  io = MQTT::Protocol::IO.v3(mio)
   MQTT::Protocol::Packet.from_io(io)
 end
 
@@ -117,7 +117,7 @@ describe MQTT::Protocol::Publish do
     mio = IO::Memory.new(bytes.size)
     mio.write bytes
     mio.rewind
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     expect_raises(MQTT::Protocol::Error::PacketDecode) do
       MQTT::Protocol::Packet.from_io(io)
     end
@@ -256,7 +256,7 @@ describe MQTT::Protocol::PubAck do
 
   it "encodes a v3 PUBACK as a bare packet id" do
     mio = IO::Memory.new
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     MQTT::Protocol::PubAck.new(packet_id: 10u16).to_io(io)
     mio.to_slice.should eq Bytes[0x40, 0x02, 0x00, 0x0A]
   end

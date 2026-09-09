@@ -22,7 +22,7 @@ describe MQTT::Protocol::Error::PacketDecode do
     mio.write bytes
     mio.rewind
     ex = expect_raises(MQTT::Protocol::Error::PacketDecode) do
-      MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO::V3.new(mio))
+      MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO.v3(mio))
     end
     ex.reason_code.should eq 0x81u8
   end

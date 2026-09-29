@@ -325,11 +325,9 @@ module MQTT
       #
       # Thin forwards to the `Framing` strategy, so packet codecs call a hook on
       # the IO and never branch on the version themselves. Every difference
-      # between v3 and v5 wire framing lives in `Framing::V3` / `Framing::V5`.
+      # between v3 and v5 wire framing lives in `Framing::V3` / `Framing::V5`;
+      # the contract each hook fulfils is documented on `Framing::Base`.
 
-      # Parse a properties section (an empty one on v3, where there is no
-      # section on the wire). Bounds come from the packet byte budget, so a
-      # peer cannot drive a read past the packet.
       def read_properties(klass : T.class) : T forall T
         @framing.read_properties(self, klass)
       end
@@ -343,8 +341,6 @@ module MQTT
         read_reason_tail(remaining_length - PACKET_ID_BYTESIZE, properties_klass)
       end
 
-      # The optional reason byte + properties tail of DISCONNECT / AUTH. Same
-      # shape as the ack tail but with no packet id (so v3 expects an empty body).
       def read_reason_tail(remaining_length : UInt32, properties_klass : P.class) : {UInt8?, P} forall P
         @framing.read_reason_tail(self, remaining_length, properties_klass)
       end
@@ -361,60 +357,10 @@ module MQTT
         @framing.write_reason_tail(self, first_byte, reason_value, properties)
       end
 
-      # Validate a SUBSCRIBE option byte's version-reserved bits ([MQTT-3.8.3-5],
-      # [MQTT-3.8.3-4 v3.1.1]).
-      def validate_subscription_options(options : UInt8) : Nil
-        @framing.validate_subscription_options(options)
-      end
-
-      # Reject packet types that do not exist in this version, before any body
-      # bytes are read. Keeps the version-blind dispatcher from parsing v5-only
-      # packets on a v3 connection - and, before CONNECT, anything but a CONNECT.
-      def validate_packet_type(type : UInt8) : Nil
-        @framing.validate_packet_type(type)
-      end
-
-      # Write-side mirror of validate_packet_type: reject packet types this
-      # version cannot put on the wire, raising before any byte is written.
-      def validate_outbound_packet_type(type : UInt8) : Nil
-        @framing.validate_outbound_packet_type(type)
-      end
-
-      # Write-side mirror of read_suback_reason: reject SUBACK reason codes
-      # this version cannot express, raising before any byte is written.
-      def validate_suback_reason(reason_code : SubAck::ReasonCode) : Nil
-        @framing.validate_suback_reason(reason_code)
-      end
-
-      # Interpret a CONNACK code byte: a v3 return code or a v5 reason code.
-      def read_connack_reason(byte : UInt8)
-        @framing.read_connack_reason(byte)
-      end
-
-      # Interpret a SUBACK payload byte: v3 allows only the granted-QoS values
-      # and 0x80 (Failure); v5 has the full reason-code set.
-      def read_suback_reason(byte : UInt8) : SubAck::ReasonCode
-        @framing.read_suback_reason(byte)
-      end
-
-      # The CONNACK code byte for this version: a v3 return code or a v5
-      # reason code. Connack#to_io resolves it BEFORE writing the header, so
-      # an unmappable reason on v3 raises cleanly instead of leaving a
-      # truncated packet on the wire.
-      def connack_code_byte(reason : Connack::ReasonCode) : UInt8
-        @framing.connack_code_byte(reason)
-      end
-
-      # Whether an empty PUBLISH topic is legal (v5, resolved via a Topic Alias).
-      def allow_empty_topic? : Bool
-        @framing.allow_empty_topic?
-      end
-
-      # Whether UNSUBACK carries a body beyond the packet id (v5: properties +
-      # per-topic reason codes; v3: a bare packet id).
-      def unsuback_payload? : Bool
-        @framing.unsuback_payload?
-      end
+      delegate validate_subscription_options, validate_packet_type,
+        validate_outbound_packet_type, validate_suback_reason,
+        read_connack_reason, read_suback_reason, connack_code_byte,
+        allow_empty_topic?, unsuback_payload?, to: @framing
 
       def write_byte(b : UInt8)
         @io.write_byte b
@@ -531,28 +477,68 @@ module MQTT
           # concrete base method because Crystal can't express an abstract def
           # with a free return type; both subclasses still override it, so the
           # base body is never reached.
+
+          # Parse a properties section (an empty one on v3, where there is no
+          # section on the wire). Bounds come from the packet byte budget, so a
+          # peer cannot drive a read past the packet.
           def read_properties(io : IO, klass : T.class) : T forall T
             raise NotImplementedError.new("read_properties")
           end
 
+          # The optional reason byte + properties tail of DISCONNECT / AUTH. Same
+          # shape as the ack tail but with no packet id (so v3 expects an empty body).
           def read_reason_tail(io : IO, remaining_length : UInt32,
                                properties_klass : P.class) : {UInt8?, P} forall P
             raise NotImplementedError.new("read_reason_tail")
           end
 
+          # Write a properties section; nothing on v3, where there is none.
           abstract def write_properties(io : IO, properties) : Nil
+
+          # Write a whole PUBACK/PUBREC/PUBREL/PUBCOMP: header, packet id, and
+          # on v5 the reason + properties tail, minus any part it may omit (§3.4.2.1).
           abstract def write_ack(io : IO, first_byte : UInt8, packet_id : UInt16,
                                  reason_value : UInt8, properties) : Nil
+
+          # Write a whole DISCONNECT / AUTH: as `write_ack` with no packet id.
           abstract def write_reason_tail(io : IO, first_byte : UInt8,
                                          reason_value : UInt8, properties) : Nil
+
+          # Validate a SUBSCRIBE option byte's version-reserved bits ([MQTT-3.8.3-5],
+          # [MQTT-3.8.3-4 v3.1.1]).
           abstract def validate_subscription_options(options : UInt8) : Nil
+
+          # Reject packet types that do not exist in this version, before any body
+          # bytes are read. Keeps the version-blind dispatcher from parsing v5-only
+          # packets on a v3 connection - and, before CONNECT, anything but a CONNECT.
           abstract def validate_packet_type(type : UInt8) : Nil
+
+          # Write-side mirror of validate_packet_type: reject packet types this
+          # version cannot put on the wire, raising before any byte is written.
           abstract def validate_outbound_packet_type(type : UInt8) : Nil
+
+          # Write-side mirror of read_suback_reason: reject SUBACK reason codes
+          # this version cannot express, raising before any byte is written.
           abstract def validate_suback_reason(reason_code : SubAck::ReasonCode) : Nil
+
+          # Interpret a CONNACK code byte: a v3 return code or a v5 reason code.
           abstract def read_connack_reason(byte : UInt8)
+
+          # Interpret a SUBACK payload byte: v3 allows only the granted-QoS values
+          # and 0x80 (Failure); v5 has the full reason-code set.
           abstract def read_suback_reason(byte : UInt8) : SubAck::ReasonCode
+
+          # The CONNACK code byte for this version: a v3 return code or a v5
+          # reason code. Connack#to_io resolves it BEFORE writing the header, so
+          # an unmappable reason on v3 raises cleanly instead of leaving a
+          # truncated packet on the wire.
           abstract def connack_code_byte(reason : Connack::ReasonCode) : UInt8
+
+          # Whether an empty PUBLISH topic is legal (v5, resolved via a Topic Alias).
           abstract def allow_empty_topic? : Bool
+
+          # Whether UNSUBACK carries a body beyond the packet id (v5: properties +
+          # per-topic reason codes; v3: a bare packet id).
           abstract def unsuback_payload? : Bool
         end
 

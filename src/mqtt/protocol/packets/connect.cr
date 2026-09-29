@@ -77,7 +77,9 @@ module MQTT
         # The protocol level is what reveals the version; switch the IO's framing
         # here so the rest of CONNECT, every later packet, and any CONNACK
         # rejecting this very CONNECT all use it.
-        io.negotiate(version)
+        unless io.negotiate(version)
+          raise Error::ProtocolError.new(0x82u8, "#{version} CONNECT on a #{io.version} connection")
+        end
 
         connect_flags = io.read_byte
         decode_assert connect_flags.bit(0) == 0, "reserved connect flag set"
@@ -135,10 +137,11 @@ module MQTT
       end
 
       def to_io(io)
-        # CONNECT establishes the version, so frame on @version regardless of
-        # what the IO was framing for; it keeps that framing for the rest of the
-        # connection, which is what a client wants after sending its CONNECT.
-        io.negotiate(@version)
+        # CONNECT establishes the version on an IO that has none yet; one
+        # already negotiated to another version refuses before any byte is written.
+        unless io.negotiate(@version)
+          raise Error::PacketEncode.new("cannot write a #{@version} CONNECT on a #{io.version} connection")
+        end
         connect_flags = 0u8
         if w = will
           connect_flags |= 0b0000_0100u8

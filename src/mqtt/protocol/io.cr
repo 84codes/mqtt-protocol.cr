@@ -149,14 +149,14 @@ module MQTT
       # every later packet, and any CONNACK rejecting this very CONNECT - is
       # framed for the version the peer asked for.
       #
-      # CONNECT is the authority on the version even when the IO was pinned at
-      # construction: a server that expects v3 still has to frame correctly for
-      # a client that turns out to be v5 (and 3.1 vs 3.1.1 share one framing but
-      # differ in `#version`). Rejecting a version the consumer does not want to
-      # serve is the consumer's call, made from `connect.version`.
-      protected def negotiate(version : Version) : Nil
-        return if @framing.negotiated? && @framing.version == version
+      # Write-once: an IO already negotiated - pinned at construction or by an
+      # earlier CONNECT - keeps its version, so a second CONNECT cannot reframe
+      # a live connection ([MQTT-3.1.0-2]). Returns false on a mismatch and
+      # leaves the caller to raise the error for its direction.
+      protected def negotiate(version : Version) : Bool
+        return @framing.version == version if @framing.negotiated?
         @framing = Framing.for(version)
+        true
       end
 
       # Read the opening CONNECT and leave this IO framing for its version.

@@ -223,7 +223,7 @@ describe MQTT::Protocol::Connect do
     io.write_bytes "bye".to_slice # will payload
     mio.rewind
 
-    rio = MQTT::Protocol::IO.v3(mio)
+    rio = MQTT::Protocol::IO.new(mio)
     connect = MQTT::Protocol::Packet.from_io(rio).as(MQTT::Protocol::Connect)
     will = connect.will.should_not be_nil
     will.topic.should eq "topic"

@@ -211,7 +211,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           # Read back and verify
-          packet = MQTT::Protocol::Packet.from_io(io)
+          packet = MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO.new(mio))
           packet.should be_a MQTT::Protocol::Connect
 
           # Reset and read again to verify protocol name and version

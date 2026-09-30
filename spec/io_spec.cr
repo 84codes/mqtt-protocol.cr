@@ -429,7 +429,8 @@ private def connect_for(version : MQTT::Protocol::Version) : MQTT::Protocol::Con
 end
 
 # Once negotiated the version is fixed for the connection's life: a later
-# CONNECT, read or written, must not reframe it ([MQTT-3.1.0-2]).
+# CONNECT, read or written, must not reframe it ([MQTT-3.1.0-2]). One for the
+# same version is let through; refusing it is up to the library user.
 describe "IO version is write-once" do
   it "rejects a second CONNECT for another version without reframing" do
     mio = IO::Memory.new
@@ -442,6 +443,17 @@ describe "IO version is write-once" do
     ex = expect_raises(MQTT::Protocol::Error::ProtocolError) { io.read_packet }
     ex.reason_code.should eq 0x82u8
     io.version.should eq MQTT::Protocol::Version::V5
+  end
+
+  it "reads a second CONNECT for the same version" do
+    mio = IO::Memory.new
+    MQTT::Protocol::IO.new(mio).write_packet connect_for(MQTT::Protocol::Version::V5)
+    MQTT::Protocol::IO.new(mio).write_packet connect_for(MQTT::Protocol::Version::V5)
+    mio.rewind
+
+    io = MQTT::Protocol::IO.new(mio)
+    io.read_connect
+    io.read_packet.as(MQTT::Protocol::Connect).version.should eq MQTT::Protocol::Version::V5
   end
 
   it "rejects a CONNECT for another version on a pinned IO" do
@@ -459,6 +471,28 @@ describe "IO version is write-once" do
     io.write_packet connect_for(MQTT::Protocol::Version::V5)
     io.version.should eq MQTT::Protocol::Version::V5
     io.negotiated?.should be_true
+  end
+
+  it "negotiates the version when Connect.from_io is called directly on a bootstrap IO" do
+    mio = IO::Memory.new
+    MQTT::Protocol::IO.new(mio).write_packet connect_for(MQTT::Protocol::Version::V5)
+    mio.rewind
+
+    io = MQTT::Protocol::IO.new(mio)
+    io.read_byte? # fixed header type + flags
+    remaining_length = io.read_remaining_length
+    MQTT::Protocol::Connect.from_io(io, 0u8, remaining_length)
+    io.version.should eq MQTT::Protocol::Version::V5
+    io.negotiated?.should be_true
+  end
+
+  it "writes a second CONNECT for the same version" do
+    mio = IO::Memory.new
+    io = MQTT::Protocol::IO.new(mio)
+    io.write_packet connect_for(MQTT::Protocol::Version::V5)
+    written = mio.size
+    io.write_packet connect_for(MQTT::Protocol::Version::V5)
+    mio.size.should eq written * 2
   end
 
   it "refuses to write a CONNECT for another version, before any byte" do

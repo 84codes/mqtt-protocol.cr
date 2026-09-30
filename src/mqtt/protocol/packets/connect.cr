@@ -64,8 +64,15 @@ module MQTT
         # Field reads are bounded by the IO's packet byte budget, so a tiny
         # packet can't declare a huge field (client id / username / password)
         # and drive a read past its boundary.
+        # The name is only compared, never kept, so read it into a stack buffer
+        # sized for the longest valid name ("MQIsdp") instead of a heap String.
+        protocol_buf = uninitialized UInt8[6]
         protocol_len = io.read_int
-        protocol = io.read_string(protocol_len)
+        if protocol_len > protocol_buf.size
+          raise Error::UnacceptableProtocolVersion.new("invalid protocol name length: #{protocol_len}")
+        end
+        protocol = protocol_buf.to_slice[0, protocol_len]
+        io.read_fully(protocol)
         version = Version.from_protocol(protocol, io.read_byte)
         # The protocol level is what reveals the version; reframe so the rest of
         # CONNECT (and the IO the caller keeps for later packets) uses it. The

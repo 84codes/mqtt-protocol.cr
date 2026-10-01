@@ -214,7 +214,7 @@ module MQTT
       getter topic, payload, qos, properties
       getter? retain
 
-      def initialize(@topic : String, @payload : Bytes, @qos : UInt8, @retain : Bool,
+      def initialize(@topic : String, @payload : Bytes, *, @qos : UInt8 = 0u8, @retain : Bool = false,
                      @properties : WillProperties = WillProperties.new)
         raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
       end
@@ -224,7 +224,7 @@ module MQTT
         properties = io.read_properties(WillProperties)
         topic = io.read_string
         payload = io.read_bytes
-        new(topic, payload, qos, retain, properties)
+        new(topic, payload, qos: qos, retain: retain, properties: properties)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end

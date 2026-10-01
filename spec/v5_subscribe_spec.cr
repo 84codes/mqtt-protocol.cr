@@ -46,7 +46,7 @@ describe MQTT::Protocol::Subscribe do
       qos: 2u8,
       no_local: true,
       retain_as_published: true,
-      retain_handling: 1u8,
+      retain_handling: :send_on_new_subscription,
     )
     subscribe = MQTT::Protocol::Subscribe.new(topic_filters: [filter], packet_id: 1u16)
     bytes = encode_v5(subscribe)
@@ -58,7 +58,7 @@ describe MQTT::Protocol::Subscribe do
     f.qos.should eq 2u8
     f.no_local?.should be_true
     f.retain_as_published?.should be_true
-    f.retain_handling.should eq 1u8
+    f.retain_handling.should eq MQTT::Protocol::Subscribe::RetainHandling::SendOnNewSubscription
   end
 
   it "round-trips SUBSCRIBE properties" do
@@ -101,7 +101,8 @@ describe MQTT::Protocol::Subscribe do
     # filter "a/b", options 0x30 (retain handling = 3, a reserved value).
     bytes = Bytes[0x82, 0x09, 0x00, 0x01, 0x00,
       0x00, 0x03, 'a'.ord, '/'.ord, 'b'.ord, 0x30]
-    expect_raises(MQTT::Protocol::Error::PacketDecode) { decode_v5(bytes) }
+    ex = expect_raises(MQTT::Protocol::Error::ProtocolError) { decode_v5(bytes) }
+    ex.reason_code.should eq 0x82u8
   end
 
   it "rejects reserved v3.1.1 subscription-option bits 2-7 [MQTT-3.8.3-4 v3.1.1]" do
@@ -148,21 +149,21 @@ describe MQTT::Protocol::Subscribe do
     f1.qos.should eq 1u8
     f1.no_local?.should be_false
     f1.retain_as_published?.should be_false
-    f1.retain_handling.should eq 0u8
+    f1.retain_handling.should eq MQTT::Protocol::Subscribe::RetainHandling::SendOnSubscribe
 
     f2 = subscribe.topic_filters[1]
     f2.topic.should eq "c/#"
     f2.qos.should eq 2u8
     f2.no_local?.should be_true
     f2.retain_as_published?.should be_true
-    f2.retain_handling.should eq 1u8
+    f2.retain_handling.should eq MQTT::Protocol::Subscribe::RetainHandling::SendOnNewSubscription
   end
 end
 
 describe MQTT::Protocol::SubAck do
   it "encodes a v5 SUBACK with empty properties and one granted QoS" do
     suback = MQTT::Protocol::SubAck.new(
-      reason_codes: [MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1],
+      reason_codes: [MQTT::Protocol::SubAck::ReasonCode::GrantedQos1],
       packet_id: 1u16,
     )
     # 0x90, rem_len 4, packet id(00 01), props(00), reason(01)
@@ -172,7 +173,7 @@ describe MQTT::Protocol::SubAck do
   it "round-trips per-entry reason codes and properties" do
     suback = MQTT::Protocol::SubAck.new(
       reason_codes: [
-        MQTT::Protocol::SubAck::ReasonCode::GrantedQoS2,
+        MQTT::Protocol::SubAck::ReasonCode::GrantedQos2,
         MQTT::Protocol::SubAck::ReasonCode::NotAuthorized,
       ],
       packet_id: 9u16,
@@ -180,7 +181,7 @@ describe MQTT::Protocol::SubAck do
     )
     decoded = decode_v5(encode_v5(suback)).as(MQTT::Protocol::SubAck)
     decoded.reason_codes.should eq [
-      MQTT::Protocol::SubAck::ReasonCode::GrantedQoS2,
+      MQTT::Protocol::SubAck::ReasonCode::GrantedQos2,
       MQTT::Protocol::SubAck::ReasonCode::NotAuthorized,
     ]
     decoded.properties.reason_string.should eq "partial"
@@ -188,7 +189,7 @@ describe MQTT::Protocol::SubAck do
 
   it "reports a bytesize matching the v5 serialization" do
     suback = MQTT::Protocol::SubAck.new(
-      reason_codes: [MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1],
+      reason_codes: [MQTT::Protocol::SubAck::ReasonCode::GrantedQos1],
       packet_id: 1u16,
       properties: MQTT::Protocol::SubAckProperties.new(reason_string: "x"),
     )
@@ -204,7 +205,7 @@ end
 describe MQTT::Protocol::Unsubscribe do
   it "encodes a v5 UNSUBSCRIBE with empty properties" do
     unsubscribe = MQTT::Protocol::Unsubscribe.new(
-      topics: ["a/b"],
+      topic_filters: ["a/b"],
       packet_id: 1u16,
     )
     # 0xA2, rem_len 8, packet id(00 01), props(00), topic(00 03 a / b)
@@ -218,18 +219,18 @@ describe MQTT::Protocol::Unsubscribe do
 
   it "round-trips UNSUBSCRIBE properties" do
     unsubscribe = MQTT::Protocol::Unsubscribe.new(
-      topics: ["a/b", "c/d"],
+      topic_filters: ["a/b", "c/d"],
       packet_id: 3u16,
       properties: MQTT::Protocol::UnsubscribeProperties.new(user_properties: [{"a", "b"}]),
     )
     decoded = decode_v5(encode_v5(unsubscribe)).as(MQTT::Protocol::Unsubscribe)
-    decoded.topics.should eq ["a/b", "c/d"]
+    decoded.topic_filters.should eq ["a/b", "c/d"]
     decoded.properties.user_properties.should eq [{"a", "b"}]
   end
 
   it "reports a bytesize matching the v5 serialization" do
     unsubscribe = MQTT::Protocol::Unsubscribe.new(
-      topics: ["a/b"], packet_id: 1u16,
+      topic_filters: ["a/b"], packet_id: 1u16,
       properties: MQTT::Protocol::UnsubscribeProperties.new(user_properties: [{"a", "b"}]),
     )
     unsubscribe.bytesize(MQTT::Protocol::Version::V5).to_i.should eq encode_v5(unsubscribe).size

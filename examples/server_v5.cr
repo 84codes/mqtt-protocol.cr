@@ -59,7 +59,7 @@ def serve(io : MQTT::Protocol::IO) : Nil
     case packet = io.read_packet
     when MQTT::Protocol::Publish
       # Above the maximum_qos the CONNACK advertised: QoS Not Supported.
-      return disconnect(io, MQTT::Protocol::Disconnect::ReasonCode::QoSNotSupported) if packet.qos > 1
+      return disconnect(io, MQTT::Protocol::Disconnect::ReasonCode::QosNotSupported) if packet.qos > 1
       puts "#{packet.topic}: #{String.new(packet.payload)}"
       if packet_id = packet.packet_id # QoS 1
         io.write_packet MQTT::Protocol::PubAck.new(packet_id)
@@ -69,7 +69,7 @@ def serve(io : MQTT::Protocol::IO) : Nil
       io.write_packet MQTT::Protocol::SubAck.new(codes, packet.packet_id)
     when MQTT::Protocol::Unsubscribe
       # Nothing is ever subscribed here, so there is nothing to remove.
-      codes = packet.topics.map { MQTT::Protocol::UnsubAck::ReasonCode::NoSubscriptionExisted }
+      codes = packet.topic_filters.map { MQTT::Protocol::UnsubAck::ReasonCode::NoSubscriptionExisted }
       io.write_packet MQTT::Protocol::UnsubAck.new(codes, packet.packet_id)
     when MQTT::Protocol::PingReq
       io.write_packet MQTT::Protocol::PingResp.new
@@ -97,9 +97,9 @@ def suback_reason(filter : MQTT::Protocol::Subscribe::TopicFilter) : MQTT::Proto
   if filter.topic.starts_with?("$share/")
     MQTT::Protocol::SubAck::ReasonCode::SharedSubscriptionsNotSupported
   elsif filter.qos.zero?
-    MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0
+    MQTT::Protocol::SubAck::ReasonCode::GrantedQos0
   else
-    MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1
+    MQTT::Protocol::SubAck::ReasonCode::GrantedQos1
   end
 end
 

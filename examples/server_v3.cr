@@ -68,7 +68,7 @@ rescue MQTT::Protocol::Error::PacketDecode | IO::Error
 end
 
 def suback_reason(filter : MQTT::Protocol::Subscribe::TopicFilter) : MQTT::Protocol::SubAck::ReasonCode
-  filter.qos.zero? ? MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0 : MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1
+  filter.qos.zero? ? MQTT::Protocol::SubAck::ReasonCode::GrantedQos0 : MQTT::Protocol::SubAck::ReasonCode::GrantedQos1
 end
 
 server = TCPServer.new("127.0.0.1", 1883)

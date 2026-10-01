@@ -260,6 +260,12 @@ describe MQTT::Protocol::Connect do
     will.properties.empty?.should be_true
   end
 
+  it "defaults a will to QoS 0 without retain" do
+    will = MQTT::Protocol::Will.new("t", "bye".to_slice)
+    will.qos.should eq 0u8
+    will.retain?.should be_false
+  end
+
   it "round-trips a v5 will with will properties" do
     will = MQTT::Protocol::Will.new(
       topic: "topic",
@@ -332,8 +338,8 @@ describe MQTT::Protocol::Connect do
   describe "#bytesize matches the serialized size" do
     will_props = MQTT::Protocol::WillProperties.new(will_delay_interval: 5u32)
     connect_props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 10u32)
-    will = MQTT::Protocol::Will.new("wt", "bye".to_slice, 1u8, true)
-    will_v5 = MQTT::Protocol::Will.new("wt", "bye".to_slice, 1u8, true, will_props)
+    will = MQTT::Protocol::Will.new("wt", "bye".to_slice, qos: 1u8, retain: true)
+    will_v5 = MQTT::Protocol::Will.new("wt", "bye".to_slice, qos: 1u8, retain: true, properties: will_props)
 
     {
       "bare"                     => {nil, nil, nil, MQTT::Protocol::ConnectProperties.new},
@@ -424,8 +430,8 @@ describe MQTT::Protocol::Connect do
     end
 
     it "can write" do
-      will = MQTT::Protocol::Will.new("wt", "bye".to_slice, 1u8, true,
-        MQTT::Protocol::WillProperties.new(will_delay_interval: 5u32))
+      will = MQTT::Protocol::Will.new("wt", "bye".to_slice, qos: 1u8, retain: true,
+        properties: MQTT::Protocol::WillProperties.new(will_delay_interval: 5u32))
       connect = MQTT::Protocol::Connect.new("cid", clean_start: false, keep_alive: 30u16,
         username: "user", password: "pass".to_slice, will: will, version: MQTT::Protocol::Version::V5,
         properties: MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 10u32))

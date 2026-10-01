@@ -34,7 +34,7 @@ module MQTT
         QuotaExceeded               = 0x97
         PayloadFormatInvalid        = 0x99
         RetainNotSupported          = 0x9A
-        QoSNotSupported             = 0x9B
+        QosNotSupported             = 0x9B
         UseAnotherServer            = 0x9C
         ServerMoved                 = 0x9D
         ConnectionRateExceeded      = 0x9F

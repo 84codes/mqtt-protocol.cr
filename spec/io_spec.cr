@@ -449,7 +449,7 @@ describe "IO bootstrap state" do
       MQTT::Protocol::PubRel.new(1u16),
       MQTT::Protocol::PubComp.new(1u16),
       MQTT::Protocol::Subscribe.new([MQTT::Protocol::Subscribe::TopicFilter.new("a/b", 0u8)], 1u16),
-      MQTT::Protocol::SubAck.new([MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0], 1u16),
+      MQTT::Protocol::SubAck.new([MQTT::Protocol::SubAck::ReasonCode::GrantedQos0], 1u16),
       MQTT::Protocol::Unsubscribe.new(["a/b"], 1u16),
       MQTT::Protocol::UnsubAck.new([MQTT::Protocol::UnsubAck::ReasonCode::Success], 1u16),
       MQTT::Protocol::PingReq.new,

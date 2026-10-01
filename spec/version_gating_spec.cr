@@ -61,7 +61,7 @@ describe "write-side version gating" do
   end
 
   it "encodes the v3-expressible SUBACK codes on a v3 connection" do
-    codes = [MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1,
+    codes = [MQTT::Protocol::SubAck::ReasonCode::GrantedQos1,
              MQTT::Protocol::SubAck::ReasonCode::UnspecifiedError]
     mio = IO::Memory.new
     MQTT::Protocol::IO.v3(mio).write_packet(MQTT::Protocol::SubAck.new(codes, 1u16))

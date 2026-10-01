@@ -24,3 +24,17 @@ jobs:
       - uses: actions/checkout@v4
       - run: shards install
       - run: crystal spec --order random
+
+  examples:
+    name: Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crystal-lang/install-crystal@v1
+      - name: Compile examples
+        run: |
+          for f in examples/*.cr; do
+            echo "::group::$f"
+            crystal build --no-codegen "$f"
+            echo "::endgroup::"
+          done

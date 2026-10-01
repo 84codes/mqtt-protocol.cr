@@ -29,11 +29,12 @@ module MQTT
       # Defined here on the base so subclasses inherit it as a macro. The
       # enclosing struct supplies its own `TYPE` and `ReasonCode` enum (which
       # must have a `Success` member); `wire_flags` is the fixed-header lower
-      # nibble (0 for all but PUBREL, which is 0b0010).
+      # nibble (0 for all but PUBREL, which is 0b0010). `legacy_flags` is also
+      # accepted on decode but never written.
       #
       # All version-dependent framing (the v5 omission rules 3.4.2.1, the v3
       # remaining-length-2 gate) lives on the IO via read_ack_tail/write_ack.
-      macro ack_packet_body(wire_flags)
+      macro ack_packet_body(wire_flags, legacy_flags = nil)
         getter packet_id, reason_code, properties
 
         def initialize(@packet_id : UInt16, @reason_code : ReasonCode = ReasonCode::Success,
@@ -46,7 +47,11 @@ module MQTT
         end
 
         def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length : UInt32)
-          decode_assert flags == {{ wire_flags }}, MQTT::Protocol::Error::InvalidFlags, flags
+          {% if legacy_flags %}
+            decode_assert (flags == {{ wire_flags }} || flags == {{ legacy_flags }}), MQTT::Protocol::Error::InvalidFlags, flags
+          {% else %}
+            decode_assert flags == {{ wire_flags }}, MQTT::Protocol::Error::InvalidFlags, flags
+          {% end %}
           # The packet id is always present (2 bytes); reject a short header
           # before reading it so a truncated ack can't over-read the next packet.
           decode_assert remaining_length >= 2, "invalid length #{remaining_length} for ack"

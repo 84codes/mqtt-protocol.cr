@@ -61,7 +61,9 @@ module MQTT
         PacketIdentifierNotFound = 0x92
       end
 
-      ack_packet_body(0u8)
+      # 0b0010 is accepted too: this library wrote it up to and including
+      # v0.3.1, so a peer built on an older version still sends it.
+      ack_packet_body(0u8, 2u8)
     end
   end
 end

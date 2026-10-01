@@ -562,6 +562,32 @@ describe MQTT::Protocol::Packet do
           pubcomp = pubcomp.should be_a MQTT::Protocol::PubComp
           pubcomp.packet_id.should eq packet_id
         end
+
+        it "still accepts the 0b0010 flags this library wrote up to v0.3.1" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO::V3.new(mio)
+          io.write_byte (7u8 << 4) | 2u8
+          io.write_remaining_length 2
+          io.write_int 123
+          mio.rewind
+
+          pubcomp = MQTT::Protocol::IO::V3.new(mio).read_packet
+          pubcomp = pubcomp.should be_a MQTT::Protocol::PubComp
+          pubcomp.packet_id.should eq 123
+        end
+
+        it "keeps the other acks strict about the reserved flags" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO::V3.new(mio)
+          io.write_byte (4u8 << 4) | 2u8
+          io.write_remaining_length 2
+          io.write_int 123
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
+            MQTT::Protocol::IO::V3.new(mio).read_packet
+          end
+        end
       end
 
       describe "#to_io" do
@@ -576,6 +602,14 @@ describe MQTT::Protocol::Packet do
           pubcomp = MQTT::Protocol::Packet.from_io(io)
           pubcomp = pubcomp.should be_a MQTT::Protocol::PubComp
           pubcomp.packet_id.should eq packet_id
+        end
+
+        it "writes the reserved flags as 0 [MQTT-3.7.1]" do
+          mio = IO::Memory.new
+          MQTT::Protocol::PubComp.new(123u16).to_io(MQTT::Protocol::IO::V3.new(mio))
+          mio.rewind
+          # 0x70, not 0x72: only PUBREL, SUBSCRIBE and UNSUBSCRIBE carry 0b0010.
+          mio.to_slice[0].should eq 0x70u8
         end
       end
     end

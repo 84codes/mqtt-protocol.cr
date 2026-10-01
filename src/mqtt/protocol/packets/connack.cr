@@ -79,12 +79,13 @@ module MQTT
         (2 + @properties.bytesize).to_u32
       end
 
-      # v3 source-compatible constructor.
+      @[Deprecated("Use `Connack.new(session_present, reason_code)` with a `ReasonCode`")]
       def initialize(session_present : Bool, return_code : ReturnCode)
         initialize(session_present, ReasonCode.from_v3_return_code(return_code))
       end
 
       # The down-mapped v3 ReturnCode (raises if the reason has no v3 equivalent).
+      @[Deprecated("Use `#reason_code`")]
       def return_code : ReturnCode
         @reason_code.to_v3_return_code ||
           raise Error::PacketEncode.new("no v3 return code for #{@reason_code}")

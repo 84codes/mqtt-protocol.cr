@@ -27,8 +27,9 @@ module MQTT
         @topic
       end
 
-      def initialize(@topic : Bytes, @payload : Bytes, @packet_id : UInt16?, @dup : Bool,
-                     @qos : UInt8, @retain : Bool, @properties : PublishProperties = PublishProperties.new)
+      def initialize(@topic : Bytes, @payload : Bytes, *, @qos : UInt8 = 0u8, @retain : Bool = false,
+                     @dup : Bool = false, @packet_id : UInt16? = nil,
+                     @properties : PublishProperties = PublishProperties.new)
         raise ArgumentError.new("QoS must be 0, 1 or 2") if @qos > 2
         validate_topic(@topic)
         raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
@@ -63,9 +64,11 @@ module MQTT
 
       # Convenience for callers that hold the topic as a `String`; stores its
       # UTF-8 bytes.
-      def self.new(topic : String, payload : Bytes, packet_id : UInt16?, dup : Bool,
-                   qos : UInt8, retain : Bool, properties : PublishProperties = PublishProperties.new)
-        new(topic.to_slice, payload, packet_id, dup, qos, retain, properties)
+      def self.new(topic : String, payload : Bytes, *, qos : UInt8 = 0u8, retain : Bool = false,
+                   dup : Bool = false, packet_id : UInt16? = nil,
+                   properties : PublishProperties = PublishProperties.new)
+        new(topic.to_slice, payload, qos: qos, retain: retain, dup: dup, packet_id: packet_id,
+          properties: properties)
       end
 
       def remaining_length(version : MQTT::Protocol::Version) : UInt32
@@ -99,7 +102,7 @@ module MQTT
         end
         # The payload is whatever the packet has left.
         payload = io.read_bytes(io.remaining_in_packet)
-        new(topic, payload, packet_id, dup, qos, retain, properties)
+        new(topic, payload, qos: qos, retain: retain, dup: dup, packet_id: packet_id, properties: properties)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end

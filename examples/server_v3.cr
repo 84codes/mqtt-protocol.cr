@@ -53,7 +53,7 @@ def serve(io : MQTT::Protocol::IO) : Nil
       codes = packet.topic_filters.map { |filter| suback_reason(filter) }
       io.write_packet MQTT::Protocol::SubAck.new(codes, packet.packet_id)
     when MQTT::Protocol::Unsubscribe
-      io.write_packet MQTT::Protocol::UnsubAck.new(packet.packet_id)
+      io.write_packet MQTT::Protocol::UnsubAck.new([] of MQTT::Protocol::UnsubAck::ReasonCode, packet.packet_id)
     when MQTT::Protocol::PingReq
       io.write_packet MQTT::Protocol::PingResp.new
     when MQTT::Protocol::Disconnect

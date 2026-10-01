@@ -99,7 +99,7 @@ describe MQTT::Protocol::Packet do
 
           connect = connect.should be_a MQTT::Protocol::Connect
           connect.client_id.should eq "foobar"
-          connect.keepalive.should eq 60
+          connect.keep_alive.should eq 60
         end
 
         it "validates the connect flags based on will [MQTT-3.1.2-11 v3.1.1]" do
@@ -167,11 +167,12 @@ describe MQTT::Protocol::Packet do
 
           connect = MQTT::Protocol::Connect.new(
             client_id: client_id,
-            clean_session: clean_session,
-            keepalive: keepalive,
+            clean_start: clean_session,
+            keep_alive: keepalive,
             username: username,
             password: password,
-            will: MQTT::Protocol::Will.new(wtopic, "will payload".to_slice, 1u8, false)
+            will: MQTT::Protocol::Will.new(wtopic, "will payload".to_slice, 1u8, false),
+            version: MQTT::Protocol::Version::V3_1_1,
           )
 
           connect.to_io(io)
@@ -258,7 +259,7 @@ describe MQTT::Protocol::Packet do
 
           connect = connect.should be_a MQTT::Protocol::Connack
           connect.session_present?.should be_true
-          connect.return_code.value.should eq 0u8
+          connect.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::Success
         end
 
         it "validates flags" do
@@ -293,14 +294,14 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.v3(mio)
 
-          connack = MQTT::Protocol::Connack.new(false, MQTT::Protocol::Connack::ReturnCode::Accepted)
+          connack = MQTT::Protocol::Connack.new(false, MQTT::Protocol::Connack::ReasonCode::Success)
           connack.to_io(io)
 
           mio.rewind
 
           connack = MQTT::Protocol::Packet.from_io(io)
           connack = connack.should be_a MQTT::Protocol::Connack
-          connack.return_code.should eq MQTT::Protocol::Connack::ReturnCode::Accepted
+          connack.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::Success
           connack.session_present?.should be_false
         end
       end
@@ -379,7 +380,7 @@ describe MQTT::Protocol::Packet do
           topic = "a/b/c"
           payload = "foobar and barfoo".to_slice
           packet_id = 100u16
-          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+          publish = MQTT::Protocol::Publish.new(topic, payload, qos: 1, packet_id: packet_id)
           publish.to_io(io)
 
           mio.rewind
@@ -397,7 +398,7 @@ describe MQTT::Protocol::Packet do
           payload = "foobar and barfoo".to_slice
           packet_id = 100u16
           expect_raises(ArgumentError) do
-            MQTT::Protocol::Publish.new(topic, payload, packet_id, true, 0, false)
+            MQTT::Protocol::Publish.new(topic, payload, dup: true, packet_id: packet_id)
           end
         end
 
@@ -408,7 +409,7 @@ describe MQTT::Protocol::Packet do
           topic = "a/b/c"
           payload = "foobar and barfoo".to_slice
           packet_id = 100u16
-          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 0, false)
+          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id: packet_id)
           publish.to_io(io)
           mio.rewind
 
@@ -427,7 +428,7 @@ describe MQTT::Protocol::Packet do
           payload = "foobar and barfoo".to_slice
           packet_id = 100u16
           expect_raises(ArgumentError) do
-            MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 3, false)
+            MQTT::Protocol::Publish.new(topic, payload, qos: 3, packet_id: packet_id)
           end
         end
 
@@ -438,12 +439,12 @@ describe MQTT::Protocol::Packet do
             packet_id = 100u16
 
             expect_raises(ArgumentError) do
-              MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+              MQTT::Protocol::Publish.new(topic, payload, qos: 1, packet_id: packet_id)
             end
 
             topic = "a/+/c"
             expect_raises(ArgumentError) do
-              MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+              MQTT::Protocol::Publish.new(topic, payload, qos: 1, packet_id: packet_id)
             end
           end
         end
@@ -1100,7 +1101,7 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.v3(mio)
 
-          unsuback = MQTT::Protocol::UnsubAck.new(65534u16)
+          unsuback = MQTT::Protocol::UnsubAck.new([MQTT::Protocol::UnsubAck::ReasonCode::Success], 65534u16)
           unsuback.to_io(io)
 
           mio.rewind

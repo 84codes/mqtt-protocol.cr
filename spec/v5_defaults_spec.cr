@@ -24,8 +24,8 @@ private def v3_connect_bytes(flags : UInt8) : Bytes
 end
 
 private def v3_connect(clean_start : Bool, properties = MQTT::Protocol::ConnectProperties.new)
-  MQTT::Protocol::Connect.new("cid", clean_start, 60u16, nil, nil, nil,
-    MQTT::Protocol::Version::V3_1_1, properties)
+  MQTT::Protocol::Connect.new("cid", clean_start: clean_start, keep_alive: 60u16,
+    version: MQTT::Protocol::Version::V3_1_1, properties: properties)
 end
 
 describe "property defaults" do
@@ -102,7 +102,7 @@ describe "a v3 CONNECT in v5 terms" do
   end
 
   it "leaves a v5 CONNECT's session expiry to the wire" do
-    connect = MQTT::Protocol::Connect.new("cid", false, 60u16, nil, nil, nil, MQTT::Protocol::Version::V5)
+    connect = MQTT::Protocol::Connect.new("cid", clean_start: false, version: MQTT::Protocol::Version::V5)
     connect.properties.session_expiry_interval?.should be_nil
   end
 end

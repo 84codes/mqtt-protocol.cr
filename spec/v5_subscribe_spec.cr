@@ -271,8 +271,17 @@ describe MQTT::Protocol::UnsubAck do
   it "encodes a v3 UNSUBACK as a bare packet id (no reason codes)" do
     mio = IO::Memory.new
     io = MQTT::Protocol::IO.v3(mio)
-    MQTT::Protocol::UnsubAck.new(packet_id: 1u16).to_io(io)
+    MQTT::Protocol::UnsubAck.new([MQTT::Protocol::UnsubAck::ReasonCode::Success], 1u16).to_io(io)
     mio.to_slice.should eq Bytes[0xB0, 0x02, 0x00, 0x01]
+  end
+
+  it "refuses to encode a v5 UNSUBACK without reason codes, before writing anything" do
+    mio = IO::Memory.new
+    unsuback = MQTT::Protocol::UnsubAck.new([] of MQTT::Protocol::UnsubAck::ReasonCode, 1u16)
+    expect_raises(MQTT::Protocol::Error::PacketEncode, /reason code/) do
+      unsuback.to_io(MQTT::Protocol::IO.v5(mio))
+    end
+    mio.size.should eq 0
   end
 
   it "reports a bytesize matching the v5 serialization" do

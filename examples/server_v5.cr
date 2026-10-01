@@ -70,7 +70,7 @@ def serve(io : MQTT::Protocol::IO) : Nil
     when MQTT::Protocol::Unsubscribe
       # Nothing is ever subscribed here, so there is nothing to remove.
       codes = packet.topics.map { MQTT::Protocol::UnsubAck::ReasonCode::NoSubscriptionExisted }
-      io.write_packet MQTT::Protocol::UnsubAck.new(packet.packet_id, codes)
+      io.write_packet MQTT::Protocol::UnsubAck.new(codes, packet.packet_id)
     when MQTT::Protocol::PingReq
       io.write_packet MQTT::Protocol::PingResp.new
     when MQTT::Protocol::Disconnect

@@ -62,7 +62,7 @@ def serve(io : MQTT::Protocol::IO) : Nil
     when MQTT::Protocol::Unsubscribe
       # v3 framing drops the per-topic reason codes.
       codes = packet.topics.map { MQTT::Protocol::UnsubAck::ReasonCode::Success }
-      io.write_packet MQTT::Protocol::UnsubAck.new(packet.packet_id, codes)
+      io.write_packet MQTT::Protocol::UnsubAck.new(codes, packet.packet_id)
     when MQTT::Protocol::PingReq
       io.write_packet MQTT::Protocol::PingResp.new
     when MQTT::Protocol::Disconnect

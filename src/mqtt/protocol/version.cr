@@ -10,9 +10,13 @@ module MQTT
     #
     # Enums are Comparable by value, so guards can read `version >= V5`.
     enum Version : UInt8
-      V3_1   = 3 # MQIsdp
-      V3_1_1 = 4 # MQTT
-      V5     = 5 # MQTT
+      # The state of an IO before CONNECT has named the version. Never a
+      # protocol level on the wire: `from_protocol` cannot return it and
+      # `Connect` refuses it.
+      Unknown = 0
+      V3_1    = 3 # MQIsdp
+      V3_1_1  = 4 # MQTT
+      V5      = 5 # MQTT
 
       # Wire protocol name carried in CONNECT for this version.
       def protocol_name : String

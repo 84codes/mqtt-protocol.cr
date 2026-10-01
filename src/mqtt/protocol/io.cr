@@ -101,17 +101,17 @@ module MQTT
       @framing : Framing::Base
 
       # `version` pins the framing up front (a client knows what it speaks);
-      # omitting it starts the IO in `Framing::Bootstrap`, where `#read_connect`
-      # discovers the version from the wire.
+      # leaving it `Unknown` starts the IO in `Framing::Bootstrap`, where
+      # `#read_connect` discovers the version from the wire.
       def initialize(@io : ::IO, max_packet_size : UInt32? = nil,
                      @byte_format : ::IO::ByteFormat = ::IO::ByteFormat::NetworkEndian,
-                     version : Version? = nil)
+                     version : Version = Version::Unknown)
         @max_packet_size = max_packet_size || MAX_PAYLOAD_SIZE
         @budget = Budget.new
-        @framing = version ? Framing.for(version) : Framing::Bootstrap::INSTANCE
+        @framing = Framing.for(version)
       end
 
-      # Build an IO pinned to `version` over `io`.
+      # Build an IO pinned to `version` over `io` (`Unknown` pins nothing, as `.new`).
       def self.for(version : Version, io : ::IO, max_packet_size : UInt32? = nil,
                    byte_format : ::IO::ByteFormat = ::IO::ByteFormat::NetworkEndian) : IO
         new(io, max_packet_size, byte_format, version)
@@ -122,7 +122,7 @@ module MQTT
       def self.v3(io : ::IO, max_packet_size : UInt32? = nil,
                   byte_format : ::IO::ByteFormat = ::IO::ByteFormat::NetworkEndian,
                   version : Version = Version::V3_1_1) : IO
-        raise ArgumentError.new("#{version} is not a v3 version") if version.v5?
+        raise ArgumentError.new("#{version} is not a v3 version") unless version.v3_1? || version.v3_1_1?
         new(io, max_packet_size, byte_format, version)
       end
 
@@ -131,9 +131,9 @@ module MQTT
         new(io, max_packet_size, byte_format, Version::V5)
       end
 
-      # The protocol version this IO frames for. Before CONNECT this is the
-      # bootstrap framing's v3, so a rejection CONNACK can be sized and written;
-      # ask `#negotiated?` to tell "known to be v3" from "not yet known".
+      # The protocol version this IO frames for, `Unknown` until pinned or read
+      # off a CONNECT. Every sizing rule branches on `v5?`, so `Unknown` sizes
+      # as v3 - the framing `Bootstrap` writes a rejection CONNACK with.
       def version : Version
         @framing.version
       end
@@ -141,7 +141,7 @@ module MQTT
       # Whether the version has been established - pinned at construction or
       # read off a CONNECT.
       def negotiated? : Bool
-        @framing.negotiated?
+        !version.unknown?
       end
 
       # Switch framing to `version`, in place. Called by the CONNECT codec the
@@ -154,7 +154,7 @@ module MQTT
       # a live connection ([MQTT-3.1.0-2]). Returns false on a mismatch and
       # leaves the caller to raise the error for its direction.
       protected def negotiate(version : Version) : Bool
-        return @framing.version == version if @framing.negotiated?
+        return @framing.version == version if negotiated?
         @framing = Framing.for(version)
         true
       end
@@ -458,20 +458,15 @@ module MQTT
         # The framing for `version`, from the shared instances.
         def self.for(version : Version) : Base
           case version
-          in Version::V3_1   then V3::V3_1
-          in Version::V3_1_1 then V3::V3_1_1
-          in Version::V5     then V5::INSTANCE
+          in Version::Unknown then Bootstrap::INSTANCE
+          in Version::V3_1    then V3::V3_1
+          in Version::V3_1_1  then V3::V3_1_1
+          in Version::V5      then V5::INSTANCE
           end
         end
 
         abstract class Base
           abstract def version : Version
-
-          # False only for `Bootstrap`, where the framing is a placeholder
-          # rather than something the wire or the caller established.
-          def negotiated? : Bool
-            true
-          end
 
           # The generic hooks (returning a parsed properties/reason type) need a
           # concrete base method because Crystal can't express an abstract def
@@ -654,14 +649,10 @@ module MQTT
         # ([MQTT-3.1.2-2]).
         class Bootstrap < V3
           def initialize
-            super(Version::V3_1_1)
+            super(Version::Unknown)
           end
 
           INSTANCE = new
-
-          def negotiated? : Bool
-            false
-          end
 
           def validate_packet_type(type : UInt8) : Nil
             # [MQTT-3.1.0-1]: the first packet MUST be a CONNECT. Rejected here,

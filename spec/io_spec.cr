@@ -357,10 +357,28 @@ describe "IO version modeling" do
     MQTT::Protocol::IO.v5(IO::Memory.new).negotiated?.should be_true
   end
 
-  it "is not negotiated before CONNECT, and frames v3 for a rejection CONNACK" do
+  it "reports Unknown before CONNECT" do
     io = MQTT::Protocol::IO.new(IO::Memory.new)
     io.negotiated?.should be_false
-    io.version.should eq MQTT::Protocol::Version::V3_1_1
+    io.version.should eq MQTT::Protocol::Version::Unknown
+  end
+
+  it "sizes a rejection CONNACK as v3 before CONNECT" do
+    io = MQTT::Protocol::IO.new(IO::Memory.new)
+    connack = MQTT::Protocol::Connack.new(
+      false, MQTT::Protocol::Connack::ReasonCode::UnsupportedProtocolVersion)
+    io.bytesize(connack).should eq connack.bytesize(MQTT::Protocol::Version::V3_1_1)
+  end
+
+  it "is not negotiated when built for Unknown" do
+    MQTT::Protocol::IO.for(MQTT::Protocol::Version::Unknown, IO::Memory.new)
+      .negotiated?.should be_false
+  end
+
+  it "refuses Unknown as a pinned v3 version" do
+    expect_raises(ArgumentError) do
+      MQTT::Protocol::IO.v3(IO::Memory.new, version: MQTT::Protocol::Version::Unknown)
+    end
   end
 
   it "read_connect leaves the IO reporting v3.1 for an MQIsdp client" do

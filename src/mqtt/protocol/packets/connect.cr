@@ -19,6 +19,8 @@ module MQTT
 
       def initialize(@client_id, @clean_session, @keepalive, @username, @password, @will,
                      @version : Version = Version::V3_1_1, @properties = ConnectProperties.new)
+        # Unknown is an IO state; a CONNECT on the wire always names a real level.
+        raise ArgumentError.new("CONNECT needs a known protocol version") if @version.unknown?
         # v5 allows a Password without a User Name (3.1.2.9); v3.1.1 forbids
         # it ([MQTT-3.1.2-22 v3.1.1]), and there is no flag encoding for it in v3.
         if @password && @username.nil? && !@version.v5?

@@ -99,7 +99,7 @@ describe MQTT::Protocol::Connect do
     io = MQTT::Protocol::IO.new(IO::Stapled.new(mio, sink))
     expect_raises(MQTT::Protocol::Error) { io.read_connect }
 
-    io.negotiated?.should be_false
+    io.version.should eq MQTT::Protocol::Version::Unknown
     io.write_packet MQTT::Protocol::Connack.new(
       false, MQTT::Protocol::Connack::ReasonCode::UnsupportedProtocolVersion)
     # v3 CONNACK: 0x20, remaining 2, flags 0, return code 1
@@ -550,6 +550,12 @@ describe "v5 CONNECT password without username" do
     decoded = MQTT::Protocol::IO.new(mio).read_connect
     decoded.username.should be_nil
     decoded.password.should eq "token".to_slice
+  end
+
+  it "rejects an Unknown version at construction" do
+    expect_raises(ArgumentError, /known protocol version/) do
+      MQTT::Protocol::Connect.new("c", true, 30u16, nil, nil, nil, MQTT::Protocol::Version::Unknown)
+    end
   end
 
   it "rejects password-without-username at construction for v3" do

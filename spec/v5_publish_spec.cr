@@ -201,7 +201,7 @@ describe MQTT::Protocol::Publish do
     publish.retain?.should be_true
     publish.dup?.should be_false
     String.new(publish.payload).should eq "21.5"
-    publish.properties.payload_format_indicator.should be_true
+    publish.properties.payload_format_indicator?.should be_true
     publish.properties.message_expiry_interval.should eq 120u32
     publish.properties.content_type.should eq "text/plain"
   end

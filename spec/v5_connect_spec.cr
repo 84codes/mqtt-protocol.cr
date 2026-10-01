@@ -128,7 +128,7 @@ describe MQTT::Protocol::Connect do
     )
     copy = original.copy_with(client_id: "assigned-id")
     copy.client_id.should eq "assigned-id"
-    copy.clean_session?.should be_false
+    copy.clean_start?.should be_false
     copy.keepalive.should eq 10u16
     copy.username.should eq "user"
     # version and properties are the fields a manual rebuild silently dropped.
@@ -152,7 +152,7 @@ describe MQTT::Protocol::Connect do
     copy.version.should eq MQTT::Protocol::Version::V3_1_1
     copy.keepalive.should eq 60u16
     copy.client_id.should eq "cid"
-    copy.clean_session?.should be_true
+    copy.clean_start?.should be_true
     copy.properties.should eq props
   end
 
@@ -350,7 +350,7 @@ describe MQTT::Protocol::Connect do
       connect = decode(bytes, MQTT::Protocol::Version::V5).as(MQTT::Protocol::Connect)
       connect.version.should eq MQTT::Protocol::Version::V5
       connect.client_id.should eq "client"
-      connect.clean_session?.should be_true
+      connect.clean_start?.should be_true
       connect.keepalive.should eq 60u16
       connect.username.should be_nil
       connect.password.should be_nil
@@ -379,7 +379,7 @@ describe MQTT::Protocol::Connect do
     it "is parsed" do
       connect = decode(bytes, MQTT::Protocol::Version::V5).as(MQTT::Protocol::Connect)
       connect.client_id.should eq "cid"
-      connect.clean_session?.should be_false
+      connect.clean_start?.should be_false
       connect.keepalive.should eq 30u16
       connect.username.should eq "user"
       String.new(connect.password.should be_a Bytes).should eq "pass"

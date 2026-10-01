@@ -167,7 +167,7 @@ describe "property value constraints on construction" do
     props = MQTT::Protocol::ConnackProperties.new(maximum_qos: 1u8, receive_maximum: 1u16)
     props.maximum_qos.should eq 1u8
     props.maximum_qos = nil
-    props.maximum_qos.should be_nil
+    props.maximum_qos?.should be_nil
     MQTT::Protocol::PublishProperties.new(topic_alias: 65535u16).topic_alias.should eq 65535u16
   end
 end

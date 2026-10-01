@@ -473,9 +473,9 @@ module MQTT
           # with a free return type; both subclasses still override it, so the
           # base body is never reached.
 
-          # Parse a properties section (an empty one on v3, where there is no
-          # section on the wire). Bounds come from the packet byte budget, so a
-          # peer cannot drive a read past the packet.
+          # Parse a properties section (on v3, where there is no section on the
+          # wire, the struct's `v3_equivalent`). Bounds come from the packet byte
+          # budget, so a peer cannot drive a read past the packet.
           def read_properties(io : IO, klass : T.class) : T forall T
             raise NotImplementedError.new("read_properties")
           end
@@ -552,7 +552,7 @@ module MQTT
           V3_1_1 = new(Version::V3_1_1)
 
           def read_properties(io : IO, klass : T.class) : T forall T
-            klass.new
+            klass.v3_equivalent
           end
 
           def write_properties(io : IO, properties) : Nil
@@ -570,7 +570,7 @@ module MQTT
             unless remaining_length.zero?
               raise Error::PacketDecode.new "invalid length #{remaining_length} for v3"
             end
-            {nil, properties_klass.new}
+            {nil, properties_klass.v3_equivalent}
           end
 
           def write_reason_tail(io : IO, first_byte : UInt8, reason_value : UInt8, properties) : Nil

@@ -15,7 +15,18 @@ module MQTT
       @properties : ConnectProperties
 
       getter client_id, keepalive, username, password, will, version, properties
-      getter? clean_session
+
+      # The Clean Start flag (3.1.2.4). The same bit as v3's Clean Session; the
+      # session lifetime that v3 also tied to it is in
+      # `properties.session_expiry_interval`.
+      def clean_start? : Bool
+        @clean_session
+      end
+
+      @[Deprecated("Use `#clean_start?` and `properties.session_expiry_interval`")]
+      def clean_session? : Bool
+        @clean_session
+      end
 
       def initialize(@client_id, @clean_session, @keepalive, @username, @password, @will,
                      @version : Version = Version::V3_1_1, @properties = ConnectProperties.new)
@@ -25,6 +36,13 @@ module MQTT
         # it ([MQTT-3.1.2-22 v3.1.1]), and there is no flag encoding for it in v3.
         if @password && @username.nil? && !@version.v5?
           raise ArgumentError.new("password without username requires MQTT 5.0")
+        end
+        # A v3 session without Clean Session lasts until a clean connect, which
+        # v5 spells as an expiry that never runs out (3.1.2.11.2). Only filled
+        # in when absent: v3 cannot carry the property, so this is the v5 view
+        # of the flag, not something that goes on the wire.
+        if !@version.v5? && !@clean_session && @properties.session_expiry_interval?.nil?
+          @properties.session_expiry_interval = UInt32::MAX
         end
       end
 
@@ -155,7 +173,7 @@ module MQTT
         # Password can be present without a username on v5 (3.1.2.9); the
         # constructor rejects that combination for v3.
         connect_flags |= 0b0100_0000u8 if password
-        connect_flags |= 0b0000_0010u8 if clean_session?
+        connect_flags |= 0b0000_0010u8 if clean_start?
         io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length(@version)
         io.write_string @version.protocol_name

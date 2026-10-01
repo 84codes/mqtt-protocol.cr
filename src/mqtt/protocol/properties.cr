@@ -14,14 +14,16 @@ module MQTT
     struct ConnectProperties
       include Properties
 
-      prop session_expiry_interval : UInt32?, id: 0x11
+      # A v3 CONNECT gets its value from Clean Session instead, see `Connect`.
+      prop session_expiry_interval : UInt32?, id: 0x11, default: 0
       # 3.1.2.11.3: a Receive Maximum of 0 is a Protocol Error.
-      prop receive_maximum : UInt16?, id: 0x21, range: 1..65535
-      # 3.1.2.11.4: a Maximum Packet Size of 0 is a Protocol Error.
+      prop receive_maximum : UInt16?, id: 0x21, range: 1..65535, default: 65535
+      # 3.1.2.11.4: a Maximum Packet Size of 0 is a Protocol Error. Absent
+      # means no limit beyond the protocol's own.
       prop maximum_packet_size : UInt32?, id: 0x27, range: 1..4294967295
-      prop topic_alias_maximum : UInt16?, id: 0x22
-      prop request_response_information : Bool?, id: 0x19
-      prop request_problem_information : Bool?, id: 0x17
+      prop topic_alias_maximum : UInt16?, id: 0x22, default: 0
+      prop request_response_information : Bool?, id: 0x19, default: false
+      prop request_problem_information : Bool?, id: 0x17, default: true
       prop authentication_method : String?, id: 0x15
       prop authentication_data : Bytes?, id: 0x16
       prop user_properties : Array(StringPair)?, id: 0x26
@@ -30,8 +32,9 @@ module MQTT
     struct WillProperties
       include Properties
 
-      prop will_delay_interval : UInt32?, id: 0x18
-      prop payload_format_indicator : Bool?, id: 0x01
+      prop will_delay_interval : UInt32?, id: 0x18, default: 0
+      prop payload_format_indicator : Bool?, id: 0x01, default: false
+      # Absent means the message does not expire.
       prop message_expiry_interval : UInt32?, id: 0x02
       prop content_type : String?, id: 0x03
       prop response_topic : String?, id: 0x08
@@ -42,32 +45,43 @@ module MQTT
     struct ConnackProperties
       include Properties
 
+      # 3.2.2.3.2: absent means the value from CONNECT stands, which this
+      # struct cannot know - so no default.
       prop session_expiry_interval : UInt32?, id: 0x11
       # 3.2.2.3.3: a Receive Maximum of 0 is a Protocol Error.
-      prop receive_maximum : UInt16?, id: 0x21, range: 1..65535
-      # 3.2.2.3.4: only 0 or 1.
-      prop maximum_qos : UInt8?, id: 0x24, range: 0..1
-      prop retain_available : Bool?, id: 0x25
-      # 3.2.2.3.6: a Maximum Packet Size of 0 is a Protocol Error.
+      prop receive_maximum : UInt16?, id: 0x21, range: 1..65535, default: 65535
+      # 3.2.2.3.4: only 0 or 1 may be sent; absent means 2.
+      prop maximum_qos : UInt8?, id: 0x24, range: 0..1, default: 2
+      prop retain_available : Bool?, id: 0x25, default: true
+      # 3.2.2.3.6: a Maximum Packet Size of 0 is a Protocol Error. Absent
+      # means no limit beyond the protocol's own.
       prop maximum_packet_size : UInt32?, id: 0x27, range: 1..4294967295
       prop assigned_client_identifier : String?, id: 0x12
-      prop topic_alias_maximum : UInt16?, id: 0x22
+      prop topic_alias_maximum : UInt16?, id: 0x22, default: 0
       prop reason_string : String?, id: 0x1F
-      prop wildcard_subscription_available : Bool?, id: 0x28
-      prop subscription_identifier_available : Bool?, id: 0x29
-      prop shared_subscription_available : Bool?, id: 0x2A
+      prop wildcard_subscription_available : Bool?, id: 0x28, default: true
+      prop subscription_identifier_available : Bool?, id: 0x29, default: true
+      prop shared_subscription_available : Bool?, id: 0x2A, default: true
+      # 3.2.2.3.14: absent means the Keep Alive from CONNECT stands.
       prop server_keep_alive : UInt16?, id: 0x13
       prop response_information : String?, id: 0x1A
       prop server_reference : String?, id: 0x1C
       prop authentication_method : String?, id: 0x15
       prop authentication_data : Bytes?, id: 0x16
       prop user_properties : Array(StringPair)?, id: 0x26
+
+      # Absent means available in v5, but subscription identifiers and shared
+      # subscriptions do not exist in v3, so a v3 server offers neither.
+      def self.v3_equivalent : self
+        new(subscription_identifier_available: false, shared_subscription_available: false)
+      end
     end
 
     struct PublishProperties
       include Properties
 
-      prop payload_format_indicator : Bool?, id: 0x01
+      prop payload_format_indicator : Bool?, id: 0x01, default: false
+      # Absent means the message does not expire.
       prop message_expiry_interval : UInt32?, id: 0x02
       # 3.3.2.3.4: a Topic Alias of 0 is a Protocol Error.
       prop topic_alias : UInt16?, id: 0x23, range: 1..65535
@@ -93,6 +107,8 @@ module MQTT
     struct DisconnectProperties
       include Properties
 
+      # 3.14.2.2.2: absent means the value from CONNECT stands, which this
+      # struct cannot know - so no default.
       prop session_expiry_interval : UInt32?, id: 0x11
       prop reason_string : String?, id: 0x1F
       prop server_reference : String?, id: 0x1C

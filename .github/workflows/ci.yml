@@ -5,10 +5,10 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    container: 84codes/crystal:latest-ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: crystal-lang/install-crystal@v1
-      - run: shards install --ignore-crystal-version
+      - run: shards install
       - run: crystal tool format --check
       - name: Build ameba
         run: |
@@ -19,8 +19,8 @@ jobs:
   spec:
     name: Spec
     runs-on: ubuntu-latest
+    container: 84codes/crystal:latest-ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: crystal-lang/install-crystal@v1
-      - run: shards install --ignore-crystal-version
+      - run: shards install
       - run: crystal spec --order random

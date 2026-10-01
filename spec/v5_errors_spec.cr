@@ -45,3 +45,36 @@ describe MQTT::Protocol::Error::ProtocolError do
     ex.reason_code.should eq 0x82u8
   end
 end
+
+describe MQTT::Protocol::Error::Connect do
+  it "carries the CONNACK reason code to answer with" do
+    MQTT::Protocol::Error::UnacceptableProtocolVersion.new.reason_code
+      .should eq MQTT::Protocol::Connack::ReasonCode::UnsupportedProtocolVersion
+    MQTT::Protocol::Error::IdentifierRejected.new.reason_code
+      .should eq MQTT::Protocol::Connack::ReasonCode::ClientIdentifierNotValid
+    MQTT::Protocol::Error::ServerUnavailable.new.reason_code
+      .should eq MQTT::Protocol::Connack::ReasonCode::ServerUnavailable
+    MQTT::Protocol::Error::BadCredentials.new.reason_code
+      .should eq MQTT::Protocol::Connack::ReasonCode::BadUserNameOrPassword
+    MQTT::Protocol::Error::NotAuthorized.new.reason_code
+      .should eq MQTT::Protocol::Connack::ReasonCode::NotAuthorized
+  end
+
+  it "rejects with any CONNACK reason code" do
+    ex = MQTT::Protocol::Error::Connect.new(MQTT::Protocol::Connack::ReasonCode::Banned, "banned")
+    ex.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::Banned
+    ex.message.should eq "banned"
+  end
+
+  it "carries Unsupported Protocol Version for an unknown protocol level" do
+    # CONNECT "MQTT" level 6
+    bytes = Bytes[0x10, 0x0A, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x06, 0x02, 0x00, 0x3C]
+    mio = IO::Memory.new(bytes.size)
+    mio.write bytes
+    mio.rewind
+    ex = expect_raises(MQTT::Protocol::Error::UnacceptableProtocolVersion) do
+      MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO.v3(mio))
+    end
+    ex.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::UnsupportedProtocolVersion
+  end
+end

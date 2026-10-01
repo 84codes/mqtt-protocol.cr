@@ -72,22 +72,22 @@ describe MQTT::Protocol::Connect do
     w.write_remaining_length 13u8
     w.write_string "MQTT"
     w.write_byte 0x05u8        # level 5 -> version is known from here on
-    w.write_byte 0b0000_0000u8 # clean start FALSE with an empty client id
+    w.write_byte 0b0000_0001u8 # reserved connect flag set -> PacketDecode
     w.write_int 60u16
     w.write_byte 0x00u8
-    w.write_string "" # empty client id -> IdentifierRejected
+    w.write_string ""
     mio.rewind
 
     sink = IO::Memory.new
     io = MQTT::Protocol::IO.new(IO::Stapled.new(mio, sink))
-    expect_raises(MQTT::Protocol::Error::Connect) { io.read_connect }
+    expect_raises(MQTT::Protocol::Error::PacketDecode, /reserved connect flag/) { io.read_connect }
 
     # The version survived the failure, so the CONNACK is v5-framed.
     io.version.should eq MQTT::Protocol::Version::V5
     io.write_packet MQTT::Protocol::Connack.new(
-      false, MQTT::Protocol::Connack::ReasonCode::ClientIdentifierNotValid)
-    # 0x20, remaining 3, flags 0, reason 0x85, properties length 0
-    sink.to_slice.should eq Bytes[0x20, 0x03, 0x00, 0x85, 0x00]
+      false, MQTT::Protocol::Connack::ReasonCode::MalformedPacket)
+    # 0x20, remaining 3, flags 0, reason 0x81, properties length 0
+    sink.to_slice.should eq Bytes[0x20, 0x03, 0x00, 0x81, 0x00]
   end
 
   it "frames a rejection CONNACK as v3 when the version was never revealed" do
@@ -169,6 +169,25 @@ describe MQTT::Protocol::Connect do
     )
     decoded = decode(encode(connect, V5ConnectHelper::V5), V5ConnectHelper::V5)
     decoded.as(MQTT::Protocol::Connect).client_id.should eq long_id
+  end
+
+  # 0x10 | rem_len | "MQTT" | level | flags 0x00 (no clean start) |
+  # keepalive 60 | [props 0x00] | client id ""
+  it "accepts an empty client id without Clean Start in v5 (3.1.3.1)" do
+    bytes = Bytes[0x10, 0x0D, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x05,
+      0x00, 0x00, 0x3C, 0x00, 0x00, 0x00]
+    connect = decode(bytes, V5ConnectHelper::V5).as(MQTT::Protocol::Connect)
+    connect.client_id.should eq ""
+    connect.clean_start?.should be_false
+  end
+
+  it "rejects an empty client id without Clean Session in v3.1.1 [MQTT-3.1.3-7]" do
+    bytes = Bytes[0x10, 0x0C, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x04,
+      0x00, 0x00, 0x3C, 0x00, 0x00]
+    ex = expect_raises(MQTT::Protocol::Error::IdentifierRejected) do
+      decode(bytes, MQTT::Protocol::Version::V3_1_1)
+    end
+    ex.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::ClientIdentifierNotValid
   end
 
   it "rejects a client id longer than 23 bytes in v3.1 (MQIsdp)" do

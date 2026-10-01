@@ -27,8 +27,7 @@ def read_connect(io : MQTT::Protocol::IO) : MQTT::Protocol::Connect?
   io.read_connect
 rescue ex : MQTT::Protocol::Error::Connect
   # Bad protocol name or level, rejected client id, ...: v3 has a return code.
-  reject(io, MQTT::Protocol::Connack::ReasonCode.from_v3_return_code(
-    MQTT::Protocol::Connack::ReturnCode.new(ex.return_code)))
+  reject(io, ex.reason_code)
 rescue MQTT::Protocol::Error::PacketDecode
   # Malformed, or a CONNECT for another version (a ProtocolError on a pinned
   # IO). v3 has no CONNACK code for either, so just close.

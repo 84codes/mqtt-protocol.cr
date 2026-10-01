@@ -40,8 +40,7 @@ def read_connect(io : MQTT::Protocol::IO) : MQTT::Protocol::Connect?
   io.read_connect
 rescue ex : MQTT::Protocol::Error::Connect
   # Bad protocol name or level, rejected client id, ...
-  reject(io, MQTT::Protocol::Connack::ReasonCode.from_v3_return_code(
-    MQTT::Protocol::Connack::ReturnCode.new(ex.return_code)))
+  reject(io, ex.reason_code)
 rescue ex : MQTT::Protocol::Error::PacketDecode
   # Every decode error carries a v5 reason code. A 3.x CONNECT lands here
   # too, as a ProtocolError (0x82) from the pinned IO.

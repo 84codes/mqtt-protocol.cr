@@ -137,7 +137,9 @@ module MQTT
         end
         client_id = io.read_string(client_id_len)
 
-        if client_id.to_s.empty?
+        # [MQTT-3.1.3-7]: v3.1.1 only takes an empty client id with Clean
+        # Session. v5 dropped the condition (3.1.3.1): the server assigns an id.
+        if client_id.empty? && !version.v5?
           decode_assert clean_session == true, Error::IdentifierRejected
         end
 

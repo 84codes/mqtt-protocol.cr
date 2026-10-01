@@ -21,8 +21,8 @@ module MQTT
     #     connect = io.read_connect   # io now frames for connect.version
     #
     # Until CONNECT reveals the version the IO sits in `Framing::Bootstrap`,
-    # which reads only CONNECT and writes v3 framing - the right framing for a
-    # CONNACK rejecting a client whose version we never learned
+    # which reads only CONNECT and writes only CONNECT or a v3-framed CONNACK -
+    # the right framing for rejecting a client whose version we never learned
     # ([MQTT-3.1.2-2]). Because the IO switches framing in place, a CONNECT that
     # fails *after* the protocol level byte is answered with a CONNACK framed
     # for the version the client actually asked for.
@@ -510,6 +510,7 @@ module MQTT
 
           # Write-side mirror of validate_packet_type: reject packet types this
           # version cannot put on the wire, raising before any byte is written.
+          # Every packet's `to_io` calls it first.
           abstract def validate_outbound_packet_type(type : UInt8) : Nil
 
           # Write-side mirror of read_suback_reason: reject SUBACK reason codes
@@ -639,14 +640,15 @@ module MQTT
           end
         end
 
-        # The pre-CONNECT state of a server-side IO: the version is not known
-        # yet, so only a CONNECT may be read ([MQTT-3.1.0-1]) and it is the
-        # CONNECT codec that replaces this framing.
+        # The pre-CONNECT state of an IO: the version is not known yet, so only
+        # a CONNECT may be read ([MQTT-3.1.0-1]) and it is the CONNECT codec
+        # that replaces this framing.
         #
-        # Writes inherit v3 framing deliberately: the one packet a server sends
-        # before knowing the version is a CONNACK rejecting the connection, and
-        # a client whose version we could not determine gets the v3 return code
-        # ([MQTT-3.1.2-2]).
+        # Writes are limited to the two packets that make sense without a
+        # version: a CONNECT, which negotiates one, and a CONNACK rejecting the
+        # connection. That CONNACK inherits v3 framing deliberately: a client
+        # whose version we could not determine gets the v3 return code
+        # ([MQTT-3.1.2-2]). Anything else needs an IO pinned to a version.
         class Bootstrap < V3
           def initialize
             super(Version::Unknown)
@@ -660,6 +662,12 @@ module MQTT
             # never be parsed with a guessed framing.
             unless type == Connect::TYPE
               raise Error::PacketDecode.new "first packet must be CONNECT, got type #{type}"
+            end
+          end
+
+          def validate_outbound_packet_type(type : UInt8) : Nil
+            unless type == Connect::TYPE || type == Connack::TYPE
+              raise Error::PacketEncode.new "cannot encode packet type #{type} before the version is negotiated"
             end
           end
         end

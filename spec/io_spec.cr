@@ -440,6 +440,32 @@ describe "IO bootstrap state" do
     io.read_connect.version.should eq MQTT::Protocol::Version::V5
     io.read_packet.as(MQTT::Protocol::Publish).topic.should eq "a/b"
   end
+
+  it "refuses to write anything but CONNECT or CONNACK, before any byte" do
+    packets = [
+      MQTT::Protocol::Publish.new("a/b", "hi".to_slice, nil, false, 0u8, false),
+      MQTT::Protocol::PubAck.new(1u16),
+      MQTT::Protocol::PubRec.new(1u16),
+      MQTT::Protocol::PubRel.new(1u16),
+      MQTT::Protocol::PubComp.new(1u16),
+      MQTT::Protocol::Subscribe.new([MQTT::Protocol::Subscribe::TopicFilter.new("a/b", 0u8)], 1u16),
+      MQTT::Protocol::SubAck.new([MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0], 1u16),
+      MQTT::Protocol::Unsubscribe.new(["a/b"], 1u16),
+      MQTT::Protocol::UnsubAck.new(1u16),
+      MQTT::Protocol::PingReq.new,
+      MQTT::Protocol::PingResp.new,
+      MQTT::Protocol::Disconnect.new,
+      MQTT::Protocol::Auth.new,
+    ] of MQTT::Protocol::Packet
+    packets.each do |packet|
+      mio = IO::Memory.new
+      io = MQTT::Protocol::IO.new(mio)
+      expect_raises(MQTT::Protocol::Error::PacketEncode, /before the version is negotiated/) do
+        io.write_packet packet
+      end
+      mio.size.should eq 0
+    end
+  end
 end
 
 private def connect_for(version : MQTT::Protocol::Version) : MQTT::Protocol::Connect

@@ -139,6 +139,7 @@ module MQTT
       end
 
       def to_io(io)
+        io.validate_outbound_packet_type(TYPE)
         # CONNECT establishes the version on an IO that has none yet; one
         # already negotiated to another version refuses before any byte is written.
         unless io.negotiate(@version)

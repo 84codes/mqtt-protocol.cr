@@ -48,6 +48,7 @@ module MQTT
       end
 
       def to_io(io)
+        io.validate_outbound_packet_type(TYPE)
         # Reject codes the version cannot express before the header goes out,
         # so an unencodable SUBACK never leaves a truncated packet behind.
         @reason_codes.each { |reason_code| io.validate_suback_reason(reason_code) }

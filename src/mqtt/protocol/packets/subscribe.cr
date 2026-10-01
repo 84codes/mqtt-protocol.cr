@@ -90,6 +90,7 @@ module MQTT
       end
 
       def to_io(io)
+        io.validate_outbound_packet_type(TYPE)
         flags = 0b0010
         io.write_byte((TYPE << 4) | flags)
         io.write_remaining_length remaining_length(io.version)

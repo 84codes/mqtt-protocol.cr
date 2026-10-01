@@ -59,6 +59,7 @@ module MQTT
       end
 
       def to_io(io)
+        io.validate_outbound_packet_type(TYPE)
         io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length(io.version)
         io.write_int(packet_id)

@@ -107,6 +107,7 @@ module MQTT
       end
 
       def to_io(io)
+        io.validate_outbound_packet_type(TYPE)
         # Resolve the code byte first: an unmappable v5 reason on a v3 IO must
         # raise before any byte goes on the wire.
         code = io.connack_code_byte(reason_code)

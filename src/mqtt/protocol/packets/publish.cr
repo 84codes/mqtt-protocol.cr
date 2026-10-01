@@ -105,6 +105,7 @@ module MQTT
       end
 
       def to_io(io)
+        io.validate_outbound_packet_type(TYPE)
         # Mirror of the decode rule: an empty topic can only go on the wire in
         # v5 with a Topic Alias to resolve it (the unnumbered Protocol Error
         # sentence in 3.3.2.1).

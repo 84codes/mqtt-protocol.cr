@@ -28,9 +28,9 @@ jobs:
   examples:
     name: Examples
     runs-on: ubuntu-latest
+    container: 84codes/crystal:latest-ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: crystal-lang/install-crystal@v1
       - name: Compile examples
         run: |
           for f in examples/*.cr; do

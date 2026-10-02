@@ -20,7 +20,7 @@ module MQTT
       def initialize(@client_id, @clean_session, @keepalive, @username, @password, @will,
                      @version : Version = Version::V3_1_1, @properties = ConnectProperties.new)
         # v5 allows a Password without a User Name (3.1.2.9); v3.1.1 forbids
-        # it ([MQTT-3.1.2-22]), and there is no flag encoding for it in v3.
+        # it ([MQTT-3.1.2-22 v3.1.1]), and there is no flag encoding for it in v3.
         if @password && @username.nil? && !@version.v5?
           raise ArgumentError.new("password without username requires MQTT 5.0")
         end
@@ -95,7 +95,7 @@ module MQTT
         has_username = connect_flags.bit(7) == 1
 
         # v3.1.1 forbids the password flag without the username flag
-        # ([MQTT-3.1.2-22]); v5 explicitly allows it (3.1.2.9).
+        # ([MQTT-3.1.2-22 v3.1.1]); v5 explicitly allows it (3.1.2.9).
         unless version.v5?
           decode_assert has_username || !has_password, "Password cannot be set without a username"
         end

@@ -23,7 +23,7 @@ module MQTT
       # from. Named (and derived from the type actually read or written) so a
       # byte-budget charge or a remaining_length calculation cannot silently
       # disagree with the bytes that hit the wire.
-      PACKET_ID_BYTESIZE   = sizeof(UInt16).to_u32 # [MQTT-2.2.1]
+      PACKET_ID_BYTESIZE   = sizeof(UInt16).to_u32 # §2.2.1
       REASON_CODE_BYTESIZE = sizeof(UInt8).to_u32
 
       # The protocol version this IO frames for. Derived from the concrete type,
@@ -246,9 +246,9 @@ module MQTT
         {key, value}
       end
 
-      # Variable Byte Integer (MQTT-1.5.5): up to four bytes, seven value bits
+      # Variable Byte Integer (§1.5.5): up to four bytes, seven value bits
       # each with the MSB as a continuation flag. The encoding MUST be minimal
-      # (MQTT-1.5.5-1), so a non-minimal encoding is rejected as malformed -
+      # [MQTT-1.5.5-1], so a non-minimal encoding is rejected as malformed -
       # otherwise an overlong value desyncs the property consumed-counter.
       def read_variable_byte_int : UInt32
         multiplier : UInt32 = 1
@@ -325,7 +325,8 @@ module MQTT
       abstract def write_properties(properties) : Nil
       abstract def write_ack(first_byte : UInt8, packet_id : UInt16, reason_value : UInt8, properties) : Nil
       abstract def write_reason_tail(first_byte : UInt8, reason_value : UInt8, properties) : Nil
-      # Validate a SUBSCRIBE option byte's version-reserved bits ([MQTT-3.8.3-5]).
+      # Validate a SUBSCRIBE option byte's version-reserved bits ([MQTT-3.8.3-5],
+      # [MQTT-3.8.3-4 v3.1.1]).
       abstract def validate_subscription_options(options : UInt8) : Nil
       # Reject packet types that do not exist in this version, before any body
       # bytes are read. Keeps the version-blind dispatcher from parsing
@@ -392,7 +393,7 @@ module MQTT
         write_string value
       end
 
-      # Variable Byte Integer (MQTT-1.5.5).
+      # Variable Byte Integer (§1.5.5).
       def write_variable_byte_int(value : Int)
         if value < 0 || value > MAX_PAYLOAD_SIZE
           raise Error::PacketEncode.new "variable byte integer out of range: #{value}"
@@ -484,7 +485,7 @@ module MQTT
 
         def validate_subscription_options(options : UInt8) : Nil
           # MQTT 3.1.1: only the two QoS bits are defined; bits 7-2 are reserved
-          # and MUST be zero, otherwise the packet is malformed [MQTT-3-8.3-4].
+          # and MUST be zero, otherwise the packet is malformed [MQTT-3.8.3-4 v3.1.1].
           # (v5 gives bits 2-5 meaning, so this rejection is v3-only.)
           unless (options & 0b1111_1100u8).zero?
             raise Error::PacketDecode.new "Malformed packet: reserved subscription option bits set"
@@ -493,7 +494,7 @@ module MQTT
 
         def validate_packet_type(type : UInt8) : Nil
           # Type 15 (AUTH) is Reserved/Forbidden in v3 (Table 2.1, section
-          # 2.2.1); a violation closes the connection per [MQTT-4.8.0-1].
+          # 2.2.1); a violation closes the connection per [MQTT-4.8.0-1 v3.1.1].
           if type == Auth::TYPE
             raise Error::PacketDecode.new "invalid packet type #{type}"
           end
@@ -507,7 +508,7 @@ module MQTT
 
         def validate_suback_reason(reason_code : SubAck::ReasonCode) : Nil
           # Only the granted-QoS values and 0x80 Failure exist in a v3.1.1
-          # SUBACK payload [MQTT-3.9.3-2].
+          # SUBACK payload [MQTT-3.9.3-2 v3.1.1].
           unless reason_code.value <= 2 || reason_code.value == 0x80
             raise Error::PacketEncode.new "no v3 suback return code for #{reason_code}"
           end
@@ -522,7 +523,7 @@ module MQTT
 
         def read_suback_reason(byte : UInt8) : SubAck::ReasonCode
           # v3.1.1 SUBACK return codes are 0-2 (granted QoS) or 0x80 Failure
-          # [MQTT-3.9.3-2]; 0x80 maps onto the v5 UnspecifiedError member.
+          # [MQTT-3.9.3-2 v3.1.1]; 0x80 maps onto the v5 UnspecifiedError member.
           unless byte <= 2 || byte == 0x80
             raise Error::PacketDecode.new "invalid suback return code #{byte}"
           end

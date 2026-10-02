@@ -102,7 +102,7 @@ describe MQTT::Protocol::Packet do
           connect.keepalive.should eq 60
         end
 
-        it "validates the connect flags based on will [MQTT-3.1.2-11]" do
+        it "validates the connect flags based on will [MQTT-3.1.2-11 v3.1.1]" do
           remaining_length = 10
 
           mio = IO::Memory.new
@@ -119,7 +119,7 @@ describe MQTT::Protocol::Packet do
           end
         end
 
-        it "validates that the password flag is not set when username flag is no set [MQTT-3.1.2-22]" do
+        it "validates that the password flag is not set when username flag is no set [MQTT-3.1.2-22 v3.1.1]" do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO::V3.new(mio)
           io.write_byte 0b00010000u8 # connect
@@ -604,7 +604,7 @@ describe MQTT::Protocol::Packet do
           pubcomp.packet_id.should eq packet_id
         end
 
-        it "writes the reserved flags as 0 [MQTT-3.7.1]" do
+        it "writes the reserved flags as 0 [MQTT-2.1.3-1]" do
           mio = IO::Memory.new
           MQTT::Protocol::PubComp.new(123u16).to_io(MQTT::Protocol::IO::V3.new(mio))
           mio.rewind

@@ -170,7 +170,7 @@ describe MQTT::Protocol::Publish do
     expect_raises(MQTT::Protocol::Error::PacketDecode) { decode_v5(bytes) }
   end
 
-  it "rejects a Subscription Identifier of 0 [MQTT-3.8.2-1]" do
+  it "rejects a Subscription Identifier of 0 (§3.3.2.3.8)" do
     # QoS0 PUBLISH, topic "a", property Subscription Identifier (0x0B) = 0.
     # Valid range is 1..268,435,455, so 0 is a Protocol Error.
     bytes = Bytes[0x30, 0x06, 0x00, 0x01, 'a'.ord, 0x02, 0x0B, 0x00]

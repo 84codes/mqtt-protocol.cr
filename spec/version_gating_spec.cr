@@ -3,7 +3,7 @@ require "./spec_helper"
 # Version gating of v5-only wire elements (FABLE_FINDINGS.md 1.9/2.4): a v3
 # connection must reject the AUTH packet type (15 is reserved in v3, Table
 # 2.1, section 2.2.1) and v5-only SUBACK reason codes (v3 allows only the
-# granted QoS values and 0x80 Failure, [MQTT-3.9.3-2]).
+# granted QoS values and 0x80 Failure, [MQTT-3.9.3-2 v3.1.1]).
 private def decode(bytes : Bytes, version : MQTT::Protocol::Version)
   mio = IO::Memory.new(bytes.size)
   mio.write bytes

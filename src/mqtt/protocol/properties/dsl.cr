@@ -4,7 +4,7 @@ module MQTT
   module Protocol
     alias StringPair = {String, String}
 
-    # A property value encoded as a Variable Byte Integer (MQTT-1.5.5). It is
+    # A property value encoded as a Variable Byte Integer (§1.5.5). It is
     # the `UInt32` the wire form decodes to, under a name `prop` can tell apart
     # from a fixed-width four byte integer.
     alias VarInt = UInt32

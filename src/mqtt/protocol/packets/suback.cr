@@ -41,7 +41,7 @@ module MQTT
         properties = io.read_properties(SubAckProperties)
         reason_codes = Array(ReasonCode).new
         while io.remaining_in_packet > 0
-          # Version-gated: v3 allows only 0-2 / 0x80 ([MQTT-3.9.3-2]).
+          # Version-gated: v3 allows only 0-2 / 0x80 ([MQTT-3.9.3-2 v3.1.1]).
           reason_codes << io.read_suback_reason(io.read_byte)
         end
         new(reason_codes, packet_id, properties)

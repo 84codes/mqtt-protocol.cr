@@ -8,7 +8,7 @@ require "./spec_helper"
 # consistently-wrong-but-self-agreeing encoder.
 describe MQTT::Protocol::IO do
   describe "Variable Byte Integer" do
-    # MQTT-1.5.5: each byte encodes 7 bits, MSB is the continuation flag.
+    # §1.5.5: each byte encodes 7 bits, MSB is the continuation flag.
     # Boundaries: 0, 127 (1 byte), 128, 16383 (2), 16384, 2097151 (3),
     # 2097152, 268435455 (4).
     samples = {
@@ -49,7 +49,7 @@ describe MQTT::Protocol::IO do
       end
     end
 
-    it "rejects a non-minimal (overlong) encoding [MQTT-1.5.5]" do
+    it "rejects a non-minimal (overlong) encoding [MQTT-1.5.5-1]" do
       # 0x81 0x00 encodes the value 1 in two bytes; the minimal form is 0x01.
       # Accepting it desyncs the property consumed-counter, so the reader must
       # treat it as a Malformed Packet.

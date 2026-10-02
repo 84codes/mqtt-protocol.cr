@@ -2,6 +2,8 @@
 
 mqtt-protocol.cr is a MQTT 3.1.1 serialization library for Crystal
 
+Code comments and specs cite MQTT 5.0 statement ids, e.g. `[MQTT-3.8.3-5]`. A rule that only exists in 3.1.1 is tagged `[MQTT-3.8.3-4 v3.1.1]`, and a rule without a statement id is cited by section, e.g. `(§1.5.5)`. The checklist below uses 3.1.1 ids.
+
 ### Parts of [ MQTT specification Appendix B](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718134) that are covered
 <details>
 <summary>List normative statements</summary>

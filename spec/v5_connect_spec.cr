@@ -180,7 +180,7 @@ describe MQTT::Protocol::Connect do
     decoded.properties.should eq props
   end
 
-  it "reads Will properties before the will topic [MQTT-3.1.3.2]" do
+  it "reads Will properties before the will topic [MQTT-3.1.3-1]" do
     mio = IO::Memory.new
     io = MQTT::Protocol::IO::V3.new(mio)
     io.write_byte 0b0001_0000u8 # CONNECT
@@ -504,7 +504,7 @@ describe MQTT::Protocol::Connack do
 end
 
 # 1.3: MQTT 5.0 allows a Password without a User Name (3.1.2.9); the MUST-NOT
-# is v3.1.1-only ([MQTT-3.1.2-22]). Both directions must honor it: decode
+# is v3.1.1-only ([MQTT-3.1.2-22 v3.1.1]). Both directions must honor it: decode
 # accepts flag bit 6 without bit 7, and encode actually writes the password.
 describe "v5 CONNECT password without username" do
   it "round-trips a v5 CONNECT carrying only a password" do

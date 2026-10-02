@@ -25,7 +25,7 @@ describe MQTT::Protocol::Error::ProtocolError do
     mio = IO::Memory.new
     mio.write Bytes[0x02, 0x99, 0x00] # len 2, unknown property id 0x99
     mio.rewind
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     ex = expect_raises(MQTT::Protocol::Error::ProtocolError) do
       MQTT::Protocol::ConnectProperties.from_io(io, mio.size.to_u32)
     end
@@ -38,7 +38,7 @@ describe MQTT::Protocol::Error::ProtocolError do
       0x11, 0x00, 0x00, 0x00, 0x01,
       0x11, 0x00, 0x00, 0x00, 0x02]
     mio.rewind
-    io = MQTT::Protocol::IO::V3.new(mio)
+    io = MQTT::Protocol::IO.v3(mio)
     ex = expect_raises(MQTT::Protocol::Error::ProtocolError) do
       MQTT::Protocol::ConnectProperties.from_io(io, mio.size.to_u32)
     end

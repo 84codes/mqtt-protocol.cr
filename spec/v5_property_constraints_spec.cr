@@ -8,7 +8,7 @@ private def decode_props(klass, bytes : Bytes)
   mio = IO::Memory.new(bytes.size)
   mio.write bytes
   mio.rewind
-  io = MQTT::Protocol::IO::V5.new(mio)
+  io = MQTT::Protocol::IO.v5(mio)
   klass.from_io(io, bytes.size.to_u32)
 end
 
@@ -68,7 +68,7 @@ private def decode_v5(bytes : Bytes)
   mio = IO::Memory.new(bytes.size)
   mio.write bytes
   mio.rewind
-  MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO::V5.new(mio))
+  MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO.v5(mio))
 end
 
 describe "v5 PUBLISH empty topic" do
@@ -89,13 +89,13 @@ describe "v5 PUBLISH empty topic" do
 
   it "refuses to encode an empty topic on a v3 connection" do
     packet = MQTT::Protocol::Publish.new("", "x".to_slice, nil, false, 0u8, false)
-    io = MQTT::Protocol::IO::V3.new(IO::Memory.new)
+    io = MQTT::Protocol::IO.v3(IO::Memory.new)
     expect_raises(MQTT::Protocol::Error::PacketEncode) { io.write_packet(packet) }
   end
 
   it "refuses to encode an empty topic on v5 without a Topic Alias" do
     packet = MQTT::Protocol::Publish.new("", "x".to_slice, nil, false, 0u8, false)
-    io = MQTT::Protocol::IO::V5.new(IO::Memory.new)
+    io = MQTT::Protocol::IO.v5(IO::Memory.new)
     expect_raises(MQTT::Protocol::Error::PacketEncode) { io.write_packet(packet) }
   end
 
@@ -103,9 +103,9 @@ describe "v5 PUBLISH empty topic" do
     props = MQTT::Protocol::PublishProperties.new(topic_alias: 5u16)
     packet = MQTT::Protocol::Publish.new("", "x".to_slice, nil, false, 0u8, false, props)
     mio = IO::Memory.new
-    MQTT::Protocol::IO::V5.new(mio).write_packet(packet)
+    MQTT::Protocol::IO.v5(mio).write_packet(packet)
     mio.rewind
-    decoded = MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO::V5.new(mio)).as(MQTT::Protocol::Publish)
+    decoded = MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO.v5(mio)).as(MQTT::Protocol::Publish)
     decoded.properties.topic_alias.should eq 5u16
   end
 end

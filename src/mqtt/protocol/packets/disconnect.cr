@@ -65,6 +65,7 @@ module MQTT
       end
 
       def to_io(io)
+        io.validate_outbound_packet_type(TYPE)
         io.write_reason_tail(TYPE << 4, reason_code.value, properties)
       end
     end

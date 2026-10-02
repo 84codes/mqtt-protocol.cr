@@ -18,6 +18,8 @@ module MQTT
     alias Flags = UInt8
 
     abstract struct Packet
+      # Implementations call `io.validate_outbound_packet_type` before writing
+      # anything, so the IO's framing decides which packet types may go out.
       abstract def to_io(io : MQTT::Protocol::IO)
 
       # Wire size of the packet's remaining bytes when framed for `version`.
@@ -68,6 +70,7 @@ module MQTT
         end
 
         def to_io(io)
+          io.validate_outbound_packet_type(TYPE)
           io.write_ack((TYPE << 4) | {{ wire_flags }}, packet_id, reason_code.value, properties)
         end
       end
@@ -140,6 +143,7 @@ module MQTT
       end
 
       def to_io(io)
+        io.validate_outbound_packet_type(type)
         io.write_byte(type << 4)
         io.write_remaining_length 0
       end

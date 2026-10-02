@@ -1,7 +1,7 @@
 require "./spec_helper"
 
 # Wire primitives added for MQTT 5.0 (see MQTT5_FINDINGS.md section 3.3) plus
-# the protocol Version enum, fixed by the concrete IO::V3 / IO::V5 type (3.1, 3.2).
+# the protocol Version enum, carried by the IO's Framing strategy (3.1, 3.2).
 #
 # These are exact-byte specs: the byte vectors are taken straight from the
 # MQTT 5.0 spec's data representation section (1.5) so they catch a
@@ -25,7 +25,7 @@ describe MQTT::Protocol::IO do
     samples.each do |value, bytes|
       it "writes #{value} as #{bytes}" do
         mio = IO::Memory.new
-        io = MQTT::Protocol::IO::V3.new(mio)
+        io = MQTT::Protocol::IO.v3(mio)
         io.write_variable_byte_int(value)
         mio.to_slice.should eq bytes
       end
@@ -34,7 +34,7 @@ describe MQTT::Protocol::IO do
         mio = IO::Memory.new
         mio.write bytes
         mio.rewind
-        io = MQTT::Protocol::IO::V3.new(mio)
+        io = MQTT::Protocol::IO.v3(mio)
         io.read_variable_byte_int.should eq value
       end
     end
@@ -43,7 +43,7 @@ describe MQTT::Protocol::IO do
       mio = IO::Memory.new
       mio.write Bytes[0x80u8, 0x80u8, 0x80u8, 0x80u8, 0x01u8]
       mio.rewind
-      io = MQTT::Protocol::IO::V3.new(mio)
+      io = MQTT::Protocol::IO.v3(mio)
       expect_raises(MQTT::Protocol::Error::PacketDecode) do
         io.read_variable_byte_int
       end
@@ -56,7 +56,7 @@ describe MQTT::Protocol::IO do
       mio = IO::Memory.new
       mio.write Bytes[0x81u8, 0x00u8]
       mio.rewind
-      io = MQTT::Protocol::IO::V3.new(mio)
+      io = MQTT::Protocol::IO.v3(mio)
       expect_raises(MQTT::Protocol::Error::PacketDecode) do
         io.read_variable_byte_int
       end
@@ -90,7 +90,7 @@ describe MQTT::Protocol::IO do
   describe "Four Byte Integer" do
     it "writes a UInt32 big-endian" do
       mio = IO::Memory.new
-      io = MQTT::Protocol::IO::V3.new(mio)
+      io = MQTT::Protocol::IO.v3(mio)
       io.write_four_byte_int(0xDEADBEEFu32)
       mio.to_slice.should eq Bytes[0xDE, 0xAD, 0xBE, 0xEF]
     end
@@ -99,13 +99,13 @@ describe MQTT::Protocol::IO do
       mio = IO::Memory.new
       mio.write Bytes[0x00u8, 0x00u8, 0x01u8, 0x00u8]
       mio.rewind
-      io = MQTT::Protocol::IO::V3.new(mio)
+      io = MQTT::Protocol::IO.v3(mio)
       io.read_four_byte_int.should eq 256u32
     end
 
     it "round-trips the maximum value" do
       mio = IO::Memory.new
-      io = MQTT::Protocol::IO::V3.new(mio)
+      io = MQTT::Protocol::IO.v3(mio)
       io.write_four_byte_int(UInt32::MAX)
       mio.rewind
       io.read_four_byte_int.should eq UInt32::MAX
@@ -115,7 +115,7 @@ describe MQTT::Protocol::IO do
   describe "UTF-8 String Pair" do
     it "writes key then value, each length-prefixed" do
       mio = IO::Memory.new
-      io = MQTT::Protocol::IO::V3.new(mio)
+      io = MQTT::Protocol::IO.v3(mio)
       io.write_string_pair("name", "value")
       mio.to_slice.should eq Bytes[
         0x00, 0x04, 'n'.ord, 'a'.ord, 'm'.ord, 'e'.ord,
@@ -125,7 +125,7 @@ describe MQTT::Protocol::IO do
 
     it "reads a key/value tuple" do
       mio = IO::Memory.new
-      io = MQTT::Protocol::IO::V3.new(mio)
+      io = MQTT::Protocol::IO.v3(mio)
       io.write_string_pair("k", "v")
       mio.rewind
       io.read_string_pair.should eq({"k", "v"})
@@ -138,7 +138,7 @@ describe MQTT::Protocol::IO do
     # 268_435_455 ceiling.
     it "accepts the maximum remaining length" do
       mio = IO::Memory.new
-      io = MQTT::Protocol::IO::V3.new(mio)
+      io = MQTT::Protocol::IO.v3(mio)
       io.write_remaining_length(268_435_455)
       mio.to_slice.should eq Bytes[0xFF, 0xFF, 0xFF, 0x7F]
     end
@@ -165,14 +165,16 @@ describe MQTT::Protocol::Version do
 
   describe "on IO" do
     it "is fixed by the concrete IO type" do
-      MQTT::Protocol::IO::V3.new(IO::Memory.new).version.should eq MQTT::Protocol::Version::V3_1_1
-      MQTT::Protocol::IO::V5.new(IO::Memory.new).version.should eq MQTT::Protocol::Version::V5
+      MQTT::Protocol::IO.v3(IO::Memory.new).version.should eq MQTT::Protocol::Version::V3_1_1
+      MQTT::Protocol::IO.v5(IO::Memory.new).version.should eq MQTT::Protocol::Version::V5
     end
 
     it "is built for a version via IO.for" do
       mio = IO::Memory.new
-      MQTT::Protocol::IO.for(MQTT::Protocol::Version::V5, mio).should be_a MQTT::Protocol::IO::V5
-      MQTT::Protocol::IO.for(MQTT::Protocol::Version::V3_1_1, mio).should be_a MQTT::Protocol::IO::V3
+      MQTT::Protocol::IO.for(MQTT::Protocol::Version::V5, mio)
+        .version.should eq MQTT::Protocol::Version::V5
+      MQTT::Protocol::IO.for(MQTT::Protocol::Version::V3_1_1, mio)
+        .version.should eq MQTT::Protocol::Version::V3_1_1
     end
   end
 end

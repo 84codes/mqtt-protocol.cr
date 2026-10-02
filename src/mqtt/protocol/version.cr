@@ -24,13 +24,13 @@ module MQTT
       # announces its version. MQIsdp/3 is MQTT 3.1, MQTT/4 is 3.1.1, MQTT/5
       # is 5.0; any other pair is an unacceptable protocol version
       # ([MQTT-3.1.2-1], [MQTT-3.1.2-2]).
-      def self.from_protocol(name : String, level : UInt8) : Version
+      def self.from_protocol(name : Bytes, level : UInt8) : Version
         case {name, level}
-        when {"MQTT", 0x04u8}   then V3_1_1
-        when {"MQTT", 0x05u8}   then V5
-        when {"MQIsdp", 0x03u8} then V3_1
+        when {"MQTT".to_slice, 0x04u8}   then V3_1_1
+        when {"MQTT".to_slice, 0x05u8}   then V5
+        when {"MQIsdp".to_slice, 0x03u8} then V3_1
         else
-          raise Error::UnacceptableProtocolVersion.new("invalid protocol: #{name.inspect} level #{level}")
+          raise Error::UnacceptableProtocolVersion.new("invalid protocol: #{String.new(name).inspect} level #{level}")
         end
       end
 

@@ -284,6 +284,13 @@ module MQTT
         bytes
       end
 
+      # Fill a caller-owned buffer (e.g. stack allocated) so a field that is
+      # only inspected, not kept, needs no heap allocation.
+      def read_fully(bytes : Bytes) : Nil
+        @budget.charge(bytes.size)
+        @io.read_fully(bytes)
+      end
+
       # --- version-dependent framing hooks -----------------------------------
       #
       # Every difference between v3 and v5 wire framing lives here as a pair of

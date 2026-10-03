@@ -41,6 +41,14 @@ private def decode_v3(bytes : Bytes)
 end
 
 describe MQTT::Protocol::Publish do
+  it "defaults to QoS 0 without retain, dup or packet id" do
+    publish = MQTT::Protocol::Publish.new("t", "x".to_slice)
+    publish.qos.should eq 0u8
+    publish.retain?.should be_false
+    publish.dup?.should be_false
+    publish.packet_id.should be_nil
+  end
+
   it "encodes a v5 QoS0 PUBLISH with an empty properties section" do
     publish = MQTT::Protocol::Publish.new(
       topic: "a/b",
@@ -201,7 +209,7 @@ describe MQTT::Protocol::Publish do
     publish.retain?.should be_true
     publish.dup?.should be_false
     String.new(publish.payload).should eq "21.5"
-    publish.properties.payload_format_indicator.should be_true
+    publish.properties.payload_format_indicator?.should be_true
     publish.properties.message_expiry_interval.should eq 120u32
     publish.properties.content_type.should eq "text/plain"
   end

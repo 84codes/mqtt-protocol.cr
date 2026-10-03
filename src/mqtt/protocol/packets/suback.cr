@@ -7,9 +7,9 @@ module MQTT
       # bytes, so the same enum encodes both versions; only the v5 properties
       # section differs.
       enum ReasonCode : UInt8
-        GrantedQoS0                         = 0x00
-        GrantedQoS1                         = 0x01
-        GrantedQoS2                         = 0x02
+        GrantedQos0                         = 0x00
+        GrantedQos1                         = 0x01
+        GrantedQos2                         = 0x02
         UnspecifiedError                    = 0x80
         ImplementationSpecificError         = 0x83
         NotAuthorized                       = 0x87
@@ -21,10 +21,49 @@ module MQTT
         WildcardSubscriptionsNotSupported   = 0xA2
       end
 
+      # The v3 return codes, kept for source compatibility: use `ReasonCode`,
+      # whose granted-QoS values and 0x80 are the same bytes. Crystal cannot
+      # deprecate an enum, so the methods taking or returning it warn instead.
+      enum ReturnCode : UInt8
+        QoS0    =   0
+        QoS1    =   1
+        QoS2    =   2
+        Failure = 128
+
+        @[Deprecated("Use `SubAck::ReasonCode`")]
+        def self.from_int(value)
+          case value
+          when 0
+            QoS0
+          when 1
+            QoS1
+          when 2
+            QoS2
+          when 128
+            Failure
+          else
+            raise Error::PacketDecode.new "invalid return code #{value}"
+          end
+        end
+      end
+
       getter reason_codes, packet_id, properties
 
       def initialize(@reason_codes : Array(ReasonCode), @packet_id : UInt16,
                      @properties : SubAckProperties = SubAckProperties.new)
+      end
+
+      @[Deprecated("Use `SubAck.new(reason_codes, packet_id)` with `SubAck::ReasonCode`")]
+      def self.new(return_codes : Array(ReturnCode), packet_id : UInt16)
+        new(return_codes.map { |code| ReasonCode.new(code.value) }, packet_id)
+      end
+
+      # v3 has a single failure code, so every v5 failure reads as `Failure`.
+      @[Deprecated("Use `#reason_codes`")]
+      def return_codes : Array(ReturnCode)
+        @reason_codes.map do |code|
+          code.value <= 2 ? ReturnCode.new(code.value) : ReturnCode::Failure
+        end
       end
 
       def remaining_length(version : MQTT::Protocol::Version) : UInt32
@@ -49,15 +88,12 @@ module MQTT
 
       def to_io(io)
         io.validate_outbound_packet_type(TYPE)
-        # Reject codes the version cannot express before the header goes out,
-        # so an unencodable SUBACK never leaves a truncated packet behind.
-        @reason_codes.each { |reason_code| io.validate_suback_reason(reason_code) }
         io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length(io.version)
         io.write_int(@packet_id)
         io.write_properties(properties)
         @reason_codes.each do |reason_code|
-          io.write_byte(reason_code.value)
+          io.write_byte(io.suback_code_byte(reason_code))
         end
       end
     end

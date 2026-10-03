@@ -49,6 +49,22 @@ module MQTT
     # by the peer", and encoding it would put bytes on the wire the application
     # never asked for.
     #
+    # Instead the reader applies it, so a consumer reads the effective value
+    # without knowing the spec defaults - or whether the packet came from a v3
+    # peer, which never sends any properties:
+    #
+    #     prop receive_maximum : UInt16?, id: 0x21, default: 65535
+    #     # receive_maximum  : UInt16   the value, or 65535 when absent
+    #     # receive_maximum? : UInt16?  the raw value, nil when absent
+    #
+    #     prop retain_available : Bool?, id: 0x25, default: true
+    #     # retain_available? : Bool    the value, or true when absent
+    #
+    # A Bool reader is a predicate, so it has no raw form, and every Bool
+    # property must declare a default. A property without one (absent means
+    # "no limit", "never", or "use the value from another packet") keeps a
+    # single nilable reader.
+    #
     # A range is enforced in both directions: the decoder rejects an
     # out-of-range value as a Protocol Error (0x82), and the generated setter
     # (so also the initializer) raises `ArgumentError`, which is what stops the
@@ -99,15 +115,26 @@ module MQTT
           props.decode_properties(io, remaining)
           props
         end
+
+        # What a v3 packet, which has no properties section, means in v5 terms.
+        # Normally the empty section; a struct overrides this where an absent
+        # property's v5 default says something a v3 peer does not.
+        def self.v3_equivalent : self
+          new
+        end
       end
 
       # Declare one property:
       #
-      #     prop <name> : <Type>?, id: <byte>, range: <range>
+      #     prop <name> : <Type>?, id: <byte>, range: <range>, default: <value>
       #
-      #     id     the property identifier (2.2.2.2, Table 2.4), written as an
-      #            unsuffixed literal in 0x01..0x7f
-      #     range  optional value constraint; outside it is a Protocol Error
+      #     id       the property identifier (2.2.2.2, Table 2.4), written as an
+      #              unsuffixed literal in 0x01..0x7f
+      #     range    optional value constraint; outside it is a Protocol Error
+      #     default  the value an absent property means, returned by the reader;
+      #              required for Bool, allowed for integers. It is not checked
+      #              against the range: Maximum QoS may only be sent as 0 or 1,
+      #              yet absent means 2.
       #
       # Everything else - the encoding, whether the property repeats - follows
       # from the declared type. Writes the instance variable, the reader, and a
@@ -115,7 +142,7 @@ module MQTT
       # expands - the message names the property, since a macro raise points at
       # the enclosing struct - so a struct that is never encoded is checked
       # just the same.
-      macro prop(decl, *, id = nil, range = nil)
+      macro prop(decl, *, id = nil, range = nil, default = nil)
         {%
           key = @type.name.stringify
           table = MQTT::Protocol::Properties::REGISTRY
@@ -161,6 +188,21 @@ module MQTT
             raise "#{prop_name}: a Bool property is already constrained to 0/1, drop the range" if element_name == "Bool"
             raise "#{prop_name}: a range is only enforceable on an integer property" unless MQTT::Protocol::Properties::INTEGER_TYPES.includes?(element_name)
           end
+          if default.nil?
+            raise "#{prop_name}: a Bool property needs a default:, its reader is a predicate" if element_name == "Bool"
+          else
+            raise "#{prop_name}: a repeatable property already defaults to empty, drop the default" if repeated
+            if element_name == "Bool"
+              raise "#{prop_name}: default must be true or false, got #{default}" unless default.is_a?(BoolLiteral)
+            elsif MQTT::Protocol::Properties::INTEGER_TYPES.includes?(element_name)
+              # Unsuffixed for the same reason as id: the reader appends the
+              # suffix, which also makes a default that overflows the type a
+              # compile error.
+              raise "#{prop_name}: default must be an unsuffixed integer literal, got #{default}" unless default.is_a?(NumberLiteral) && (default.kind == :i32 || default.kind == :i64)
+            else
+              raise "#{prop_name}: only Bool and integer properties take a default"
+            end
+          end
           # Every id is a bare decimal by now, so identifiers compare as numbers:
           # 0x11 and 17 are the same id.
           if other = table[key].find { |existing| existing[:id] == id }
@@ -203,9 +245,24 @@ module MQTT
             @{{ name.id }} = value.try { |list| list.empty? ? nil : list }
           end
         {% else %}
+          {% if default.nil? %}
           def {{ name.id }} : {{ type }}
             @{{ name.id }}
           end
+          {% elsif element_name == "Bool" %}
+          def {{ name.id }}? : Bool
+            (value = @{{ name.id }}).nil? ? {{ default }} : value
+          end
+          {% else %}
+          {% suffix = {"UInt8" => "u8", "UInt16" => "u16", "UInt32" => "u32", "VarInt" => "u32"}[element_name] %}
+          def {{ name.id }} : {{ base }}
+            @{{ name.id }} || {{ "#{default.to_number}_#{suffix.id}".id }}
+          end
+
+          def {{ name.id }}? : {{ type }}
+            @{{ name.id }}
+          end
+          {% end %}
 
           def {{ name.id }}=(value : {{ type }}) : {{ type }}
             {% if range %}

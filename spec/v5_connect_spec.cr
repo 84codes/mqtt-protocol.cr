@@ -72,22 +72,22 @@ describe MQTT::Protocol::Connect do
     w.write_remaining_length 13u8
     w.write_string "MQTT"
     w.write_byte 0x05u8        # level 5 -> version is known from here on
-    w.write_byte 0b0000_0000u8 # clean start FALSE with an empty client id
+    w.write_byte 0b0000_0001u8 # reserved connect flag set -> PacketDecode
     w.write_int 60u16
     w.write_byte 0x00u8
-    w.write_string "" # empty client id -> IdentifierRejected
+    w.write_string ""
     mio.rewind
 
     sink = IO::Memory.new
     io = MQTT::Protocol::IO.new(IO::Stapled.new(mio, sink))
-    expect_raises(MQTT::Protocol::Error::Connect) { io.read_connect }
+    expect_raises(MQTT::Protocol::Error::PacketDecode, /reserved connect flag/) { io.read_connect }
 
     # The version survived the failure, so the CONNACK is v5-framed.
     io.version.should eq MQTT::Protocol::Version::V5
     io.write_packet MQTT::Protocol::Connack.new(
-      false, MQTT::Protocol::Connack::ReasonCode::ClientIdentifierNotValid)
-    # 0x20, remaining 3, flags 0, reason 0x85, properties length 0
-    sink.to_slice.should eq Bytes[0x20, 0x03, 0x00, 0x85, 0x00]
+      false, MQTT::Protocol::Connack::ReasonCode::MalformedPacket)
+    # 0x20, remaining 3, flags 0, reason 0x81, properties length 0
+    sink.to_slice.should eq Bytes[0x20, 0x03, 0x00, 0x81, 0x00]
   end
 
   it "frames a rejection CONNACK as v3 when the version was never revealed" do
@@ -114,12 +114,22 @@ describe MQTT::Protocol::Connect do
     expect_raises(MQTT::Protocol::Error::PacketDecode, /must be CONNECT/) { boot.read_connect }
   end
 
+  it "defaults to a clean v5 CONNECT with a 60 second keep alive" do
+    connect = MQTT::Protocol::Connect.new("cid")
+    connect.version.should eq MQTT::Protocol::Version::V5
+    connect.clean_start?.should be_true
+    connect.keep_alive.should eq 60u16
+    connect.username.should be_nil
+    connect.password.should be_nil
+    connect.will.should be_nil
+  end
+
   it "copy_with changes only the named field and carries the rest over" do
     props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 30u32)
     original = MQTT::Protocol::Connect.new(
       client_id: "",
-      clean_session: false,
-      keepalive: 10u16,
+      clean_start: false,
+      keep_alive: 10u16,
       username: "user",
       password: "pass".to_slice,
       will: nil,
@@ -128,8 +138,8 @@ describe MQTT::Protocol::Connect do
     )
     copy = original.copy_with(client_id: "assigned-id")
     copy.client_id.should eq "assigned-id"
-    copy.clean_session?.should be_false
-    copy.keepalive.should eq 10u16
+    copy.clean_start?.should be_false
+    copy.keep_alive.should eq 10u16
     copy.username.should eq "user"
     # version and properties are the fields a manual rebuild silently dropped.
     copy.version.should eq MQTT::Protocol::Version::V5
@@ -140,19 +150,19 @@ describe MQTT::Protocol::Connect do
     props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 30u32)
     original = MQTT::Protocol::Connect.new(
       client_id: "cid",
-      clean_session: true,
-      keepalive: 30u16,
+      clean_start: true,
+      keep_alive: 30u16,
       username: nil,
       password: nil,
       will: nil,
       version: MQTT::Protocol::Version::V5,
       properties: props,
     )
-    copy = original.copy_with(version: MQTT::Protocol::Version::V3_1_1, keepalive: 60u16)
+    copy = original.copy_with(version: MQTT::Protocol::Version::V3_1_1, keep_alive: 60u16)
     copy.version.should eq MQTT::Protocol::Version::V3_1_1
-    copy.keepalive.should eq 60u16
+    copy.keep_alive.should eq 60u16
     copy.client_id.should eq "cid"
-    copy.clean_session?.should be_true
+    copy.clean_start?.should be_true
     copy.properties.should eq props
   end
 
@@ -160,8 +170,8 @@ describe MQTT::Protocol::Connect do
     long_id = "a" * 300
     connect = MQTT::Protocol::Connect.new(
       client_id: long_id,
-      clean_session: true,
-      keepalive: 60u16,
+      clean_start: true,
+      keep_alive: 60u16,
       username: nil,
       password: nil,
       will: nil,
@@ -171,12 +181,31 @@ describe MQTT::Protocol::Connect do
     decoded.as(MQTT::Protocol::Connect).client_id.should eq long_id
   end
 
+  # 0x10 | rem_len | "MQTT" | level | flags 0x00 (no clean start) |
+  # keepalive 60 | [props 0x00] | client id ""
+  it "accepts an empty client id without Clean Start in v5 (3.1.3.1)" do
+    bytes = Bytes[0x10, 0x0D, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x05,
+      0x00, 0x00, 0x3C, 0x00, 0x00, 0x00]
+    connect = decode(bytes, V5ConnectHelper::V5).as(MQTT::Protocol::Connect)
+    connect.client_id.should eq ""
+    connect.clean_start?.should be_false
+  end
+
+  it "rejects an empty client id without Clean Session in v3.1.1 [MQTT-3.1.3-7]" do
+    bytes = Bytes[0x10, 0x0C, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x04,
+      0x00, 0x00, 0x3C, 0x00, 0x00]
+    ex = expect_raises(MQTT::Protocol::Error::IdentifierRejected) do
+      decode(bytes, MQTT::Protocol::Version::V3_1_1)
+    end
+    ex.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::ClientIdentifierNotValid
+  end
+
   it "rejects a client id longer than 23 bytes in v3.1 (MQIsdp)" do
     v3_1 = MQTT::Protocol::Version::V3_1
     connect = MQTT::Protocol::Connect.new(
       client_id: "a" * 24,
-      clean_session: true,
-      keepalive: 60u16,
+      clean_start: true,
+      keep_alive: 60u16,
       username: nil,
       password: nil,
       will: nil,
@@ -194,8 +223,8 @@ describe MQTT::Protocol::Connect do
     )
     connect = MQTT::Protocol::Connect.new(
       client_id: "client",
-      clean_session: true,
-      keepalive: 60u16,
+      clean_start: true,
+      keep_alive: 60u16,
       username: nil,
       password: nil,
       will: nil,
@@ -231,6 +260,12 @@ describe MQTT::Protocol::Connect do
     will.properties.empty?.should be_true
   end
 
+  it "defaults a will to QoS 0 without retain" do
+    will = MQTT::Protocol::Will.new("t", "bye".to_slice)
+    will.qos.should eq 0u8
+    will.retain?.should be_false
+  end
+
   it "round-trips a v5 will with will properties" do
     will = MQTT::Protocol::Will.new(
       topic: "topic",
@@ -244,8 +279,8 @@ describe MQTT::Protocol::Connect do
     )
     connect = MQTT::Protocol::Connect.new(
       client_id: "client",
-      clean_session: true,
-      keepalive: 10u16,
+      clean_start: true,
+      keep_alive: 10u16,
       username: "user",
       password: "pass".to_slice,
       will: will,
@@ -303,8 +338,8 @@ describe MQTT::Protocol::Connect do
   describe "#bytesize matches the serialized size" do
     will_props = MQTT::Protocol::WillProperties.new(will_delay_interval: 5u32)
     connect_props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 10u32)
-    will = MQTT::Protocol::Will.new("wt", "bye".to_slice, 1u8, true)
-    will_v5 = MQTT::Protocol::Will.new("wt", "bye".to_slice, 1u8, true, will_props)
+    will = MQTT::Protocol::Will.new("wt", "bye".to_slice, qos: 1u8, retain: true)
+    will_v5 = MQTT::Protocol::Will.new("wt", "bye".to_slice, qos: 1u8, retain: true, properties: will_props)
 
     {
       "bare"                     => {nil, nil, nil, MQTT::Protocol::ConnectProperties.new},
@@ -314,8 +349,9 @@ describe MQTT::Protocol::Connect do
       "will + username/password" => {"user", "pass".to_slice, will, MQTT::Protocol::ConnectProperties.new},
     }.each do |name, (username, password, w, props)|
       it "for a v3.1.1 CONNECT (#{name})" do
-        connect = MQTT::Protocol::Connect.new("cid", false, 30u16, username, password, w,
-          MQTT::Protocol::Version::V3_1_1, props)
+        connect = MQTT::Protocol::Connect.new("cid", clean_start: false, keep_alive: 30u16,
+          username: username, password: password, will: w,
+          version: MQTT::Protocol::Version::V3_1_1, properties: props)
         connect.bytesize(MQTT::Protocol::Version::V3_1_1).to_i
           .should eq encode(connect, MQTT::Protocol::Version::V3_1_1).size
       end
@@ -329,8 +365,9 @@ describe MQTT::Protocol::Connect do
       "everything + properties" => {"user", "pass".to_slice, will_v5, connect_props},
     }.each do |name, (username, password, w, props)|
       it "for a v5 CONNECT (#{name})" do
-        connect = MQTT::Protocol::Connect.new("cid", false, 30u16, username, password, w,
-          MQTT::Protocol::Version::V5, props)
+        connect = MQTT::Protocol::Connect.new("cid", clean_start: false, keep_alive: 30u16,
+          username: username, password: password, will: w,
+          version: MQTT::Protocol::Version::V5, properties: props)
         connect.bytesize(MQTT::Protocol::Version::V5).to_i
           .should eq encode(connect, MQTT::Protocol::Version::V5).size
       end
@@ -350,8 +387,8 @@ describe MQTT::Protocol::Connect do
       connect = decode(bytes, MQTT::Protocol::Version::V5).as(MQTT::Protocol::Connect)
       connect.version.should eq MQTT::Protocol::Version::V5
       connect.client_id.should eq "client"
-      connect.clean_session?.should be_true
-      connect.keepalive.should eq 60u16
+      connect.clean_start?.should be_true
+      connect.keep_alive.should eq 60u16
       connect.username.should be_nil
       connect.password.should be_nil
       connect.will.should be_nil
@@ -359,8 +396,8 @@ describe MQTT::Protocol::Connect do
     end
 
     it "can write" do
-      connect = MQTT::Protocol::Connect.new("client", true, 60u16, nil, nil, nil,
-        MQTT::Protocol::Version::V5)
+      connect = MQTT::Protocol::Connect.new("client", clean_start: true, keep_alive: 60u16,
+        version: MQTT::Protocol::Version::V5)
       encode(connect, MQTT::Protocol::Version::V5).should eq bytes
     end
   end
@@ -379,8 +416,8 @@ describe MQTT::Protocol::Connect do
     it "is parsed" do
       connect = decode(bytes, MQTT::Protocol::Version::V5).as(MQTT::Protocol::Connect)
       connect.client_id.should eq "cid"
-      connect.clean_session?.should be_false
-      connect.keepalive.should eq 30u16
+      connect.clean_start?.should be_false
+      connect.keep_alive.should eq 30u16
       connect.username.should eq "user"
       String.new(connect.password.should be_a Bytes).should eq "pass"
       connect.properties.session_expiry_interval.should eq 10u32
@@ -393,11 +430,11 @@ describe MQTT::Protocol::Connect do
     end
 
     it "can write" do
-      will = MQTT::Protocol::Will.new("wt", "bye".to_slice, 1u8, true,
-        MQTT::Protocol::WillProperties.new(will_delay_interval: 5u32))
-      connect = MQTT::Protocol::Connect.new("cid", false, 30u16, "user", "pass".to_slice,
-        will, MQTT::Protocol::Version::V5,
-        MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 10u32))
+      will = MQTT::Protocol::Will.new("wt", "bye".to_slice, qos: 1u8, retain: true,
+        properties: MQTT::Protocol::WillProperties.new(will_delay_interval: 5u32))
+      connect = MQTT::Protocol::Connect.new("cid", clean_start: false, keep_alive: 30u16,
+        username: "user", password: "pass".to_slice, will: will, version: MQTT::Protocol::Version::V5,
+        properties: MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 10u32))
       encode(connect, MQTT::Protocol::Version::V5).should eq bytes
     end
   end
@@ -489,7 +526,7 @@ describe MQTT::Protocol::Connack do
   end
 
   it "reports a bytesize matching the v3 serialization (properties dropped)" do
-    connack = MQTT::Protocol::Connack.new(false, MQTT::Protocol::Connack::ReturnCode::Accepted)
+    connack = MQTT::Protocol::Connack.new(false, MQTT::Protocol::Connack::ReasonCode::Success)
     connack.bytesize(MQTT::Protocol::Version::V3_1_1).to_i.should eq encode(connack, MQTT::Protocol::Version::V3_1_1).size
   end
 
@@ -537,8 +574,8 @@ describe "v5 CONNECT password without username" do
   it "round-trips a v5 CONNECT carrying only a password" do
     connect = MQTT::Protocol::Connect.new(
       client_id: "pw-only",
-      clean_session: true,
-      keepalive: 30u16,
+      clean_start: true,
+      keep_alive: 30u16,
       username: nil,
       password: "token".to_slice,
       will: nil,
@@ -554,7 +591,7 @@ describe "v5 CONNECT password without username" do
 
   it "rejects an Unknown version at construction" do
     expect_raises(ArgumentError, /known protocol version/) do
-      MQTT::Protocol::Connect.new("c", true, 30u16, nil, nil, nil, MQTT::Protocol::Version::Unknown)
+      MQTT::Protocol::Connect.new("c", keep_alive: 30u16, version: MQTT::Protocol::Version::Unknown)
     end
   end
 
@@ -562,8 +599,8 @@ describe "v5 CONNECT password without username" do
     expect_raises(ArgumentError, /username/) do
       MQTT::Protocol::Connect.new(
         client_id: "pw-only",
-        clean_session: true,
-        keepalive: 30u16,
+        clean_start: true,
+        keep_alive: 30u16,
         username: nil,
         password: "token".to_slice,
         will: nil,

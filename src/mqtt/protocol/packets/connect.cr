@@ -6,19 +6,34 @@ module MQTT
       TYPE = 1_u8
 
       @client_id : String
-      @clean_session : Bool
-      @keepalive : UInt16
+      @clean_start : Bool
+      @keep_alive : UInt16
       @username : String?
       @password : Bytes?
       @will : Will?
       @version : Version
       @properties : ConnectProperties
 
-      getter client_id, keepalive, username, password, will, version, properties
-      getter? clean_session
+      getter client_id, keep_alive, username, password, will, version, properties
 
-      def initialize(@client_id, @clean_session, @keepalive, @username, @password, @will,
-                     @version : Version = Version::V3_1_1, @properties = ConnectProperties.new)
+      # The Clean Start flag (3.1.2.4). The same bit as v3's Clean Session; the
+      # session lifetime that v3 also tied to it is in
+      # `properties.session_expiry_interval`.
+      getter? clean_start
+
+      @[Deprecated("Use `#clean_start?` and `properties.session_expiry_interval`")]
+      def clean_session? : Bool
+        @clean_start
+      end
+
+      @[Deprecated("Use `#keep_alive`")]
+      def keepalive : UInt16
+        @keep_alive
+      end
+
+      def initialize(@client_id : String, *, @clean_start : Bool = true, @keep_alive : UInt16 = 60u16,
+                     @username : String? = nil, @password : Bytes? = nil, @will : Will? = nil,
+                     @version : Version = Version::V5, @properties : ConnectProperties = ConnectProperties.new)
         # Unknown is an IO state; a CONNECT on the wire always names a real level.
         raise ArgumentError.new("CONNECT needs a known protocol version") if @version.unknown?
         # v5 allows a Password without a User Name (3.1.2.9); v3.1.1 forbids
@@ -26,16 +41,32 @@ module MQTT
         if @password && @username.nil? && !@version.v5?
           raise ArgumentError.new("password without username requires MQTT 5.0")
         end
+        # A v3 session without Clean Session lasts until a clean connect, which
+        # v5 spells as an expiry that never runs out (3.1.2.11.2). Only filled
+        # in when absent: v3 cannot carry the property, so this is the v5 view
+        # of the flag, not something that goes on the wire.
+        if !@version.v5? && !@clean_start && @properties.session_expiry_interval?.nil?
+          @properties.session_expiry_interval = UInt32::MAX
+        end
+      end
+
+      @[Deprecated("Use `Connect.new(client_id, clean_start:, keep_alive:, ...)`")]
+      def self.new(client_id : String, clean_session : Bool, keepalive : UInt16, username : String?,
+                   password : Bytes?, will : Will?, version : Version = Version::V3_1_1,
+                   properties : ConnectProperties = ConnectProperties.new)
+        new(client_id, clean_start: clean_session, keep_alive: keepalive, username: username,
+          password: password, will: will, version: version, properties: properties)
       end
 
       # Return a copy with the given fields changed and the rest carried over, so
       # a consumer (e.g. assigning a client id server-side) can't silently drop
       # version/properties by re-listing the constructor. Mirrors `record`'s
       # `copy_with`, hand-written because Connect is a plain `struct < Packet`.
-      def copy_with(client_id = @client_id, clean_session = @clean_session,
-                    keepalive = @keepalive, username = @username, password = @password,
+      def copy_with(client_id = @client_id, clean_start = @clean_start,
+                    keep_alive = @keep_alive, username = @username, password = @password,
                     will = @will, version = @version, properties = @properties)
-        Connect.new(client_id, clean_session, keepalive, username, password, will, version, properties)
+        Connect.new(client_id, clean_start: clean_start, keep_alive: keep_alive, username: username,
+          password: password, will: will, version: version, properties: properties)
       end
 
       # CONNECT carries its own protocol version, so its framing follows
@@ -59,6 +90,7 @@ module MQTT
         len.to_u32
       end
 
+      # ameba:disable Metrics/CyclomaticComplexity
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         io.ensure_packet_budget(remaining_length.to_u32)
@@ -85,7 +117,7 @@ module MQTT
 
         connect_flags = io.read_byte
         decode_assert connect_flags.bit(0) == 0, "reserved connect flag set"
-        clean_session = connect_flags.bit(1) == 1
+        clean_start = connect_flags.bit(1) == 1
         has_will = connect_flags.bit(2) == 1
         unless has_will
           will_flags = (connect_flags & 0b00111000)
@@ -104,7 +136,7 @@ module MQTT
           decode_assert has_username || !has_password, "Password cannot be set without a username"
         end
 
-        keepalive = io.read_int
+        keep_alive = io.read_int
 
         properties = io.read_properties(ConnectProperties)
 
@@ -119,8 +151,10 @@ module MQTT
         end
         client_id = io.read_string(client_id_len)
 
-        if client_id.to_s.empty?
-          decode_assert clean_session == true, Error::IdentifierRejected
+        # [MQTT-3.1.3-7]: v3.1.1 only takes an empty client id with Clean
+        # Session. v5 dropped the condition (3.1.3.1): the server assigns an id.
+        if client_id.empty? && !version.v5?
+          decode_assert clean_start == true, Error::IdentifierRejected
         end
 
         if has_will
@@ -135,7 +169,8 @@ module MQTT
         # Exact consumption of remaining_length (section 2.1.4) is enforced
         # centrally by the dispatcher's finish_packet.
 
-        new(client_id, clean_session, keepalive, username, password, will, version, properties)
+        new(client_id, clean_start: clean_start, keep_alive: keep_alive, username: username,
+          password: password, will: will, version: version, properties: properties)
       end
 
       def to_io(io)
@@ -155,13 +190,13 @@ module MQTT
         # Password can be present without a username on v5 (3.1.2.9); the
         # constructor rejects that combination for v3.
         connect_flags |= 0b0100_0000u8 if password
-        connect_flags |= 0b0000_0010u8 if clean_session?
+        connect_flags |= 0b0000_0010u8 if clean_start?
         io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length(@version)
         io.write_string @version.protocol_name
         io.write_byte @version.value
         io.write_byte connect_flags
-        io.write_int keepalive
+        io.write_int keep_alive
         io.write_properties(@properties)
         io.write_string client_id
         if w = will
@@ -180,7 +215,7 @@ module MQTT
       getter topic, payload, qos, properties
       getter? retain
 
-      def initialize(@topic : String, @payload : Bytes, @qos : UInt8, @retain : Bool,
+      def initialize(@topic : String, @payload : Bytes, *, @qos : UInt8 = 0u8, @retain : Bool = false,
                      @properties : WillProperties = WillProperties.new)
         raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
       end
@@ -190,7 +225,7 @@ module MQTT
         properties = io.read_properties(WillProperties)
         topic = io.read_string
         payload = io.read_bytes
-        new(topic, payload, qos, retain, properties)
+        new(topic, payload, qos: qos, retain: retain, properties: properties)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
       end

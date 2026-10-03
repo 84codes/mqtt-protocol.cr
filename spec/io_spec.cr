@@ -433,7 +433,7 @@ describe "IO bootstrap state" do
     w.write_byte 0x00u8
     w.write_string ""
     # A v5 PUBLISH with an empty properties section, legal now the version is known.
-    w.write_packet MQTT::Protocol::Publish.new("a/b", "hi".to_slice, nil, false, 0u8, false)
+    w.write_packet MQTT::Protocol::Publish.new("a/b", "hi".to_slice)
     mio.rewind
 
     io = MQTT::Protocol::IO.new(mio)
@@ -443,15 +443,15 @@ describe "IO bootstrap state" do
 
   it "refuses to write anything but CONNECT or CONNACK, before any byte" do
     packets = [
-      MQTT::Protocol::Publish.new("a/b", "hi".to_slice, nil, false, 0u8, false),
+      MQTT::Protocol::Publish.new("a/b", "hi".to_slice),
       MQTT::Protocol::PubAck.new(1u16),
       MQTT::Protocol::PubRec.new(1u16),
       MQTT::Protocol::PubRel.new(1u16),
       MQTT::Protocol::PubComp.new(1u16),
       MQTT::Protocol::Subscribe.new([MQTT::Protocol::Subscribe::TopicFilter.new("a/b", 0u8)], 1u16),
-      MQTT::Protocol::SubAck.new([MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0], 1u16),
+      MQTT::Protocol::SubAck.new([MQTT::Protocol::SubAck::ReasonCode::GrantedQos0], 1u16),
       MQTT::Protocol::Unsubscribe.new(["a/b"], 1u16),
-      MQTT::Protocol::UnsubAck.new(1u16),
+      MQTT::Protocol::UnsubAck.new([MQTT::Protocol::UnsubAck::ReasonCode::Success], 1u16),
       MQTT::Protocol::PingReq.new,
       MQTT::Protocol::PingResp.new,
       MQTT::Protocol::Disconnect.new,
@@ -469,7 +469,7 @@ describe "IO bootstrap state" do
 end
 
 private def connect_for(version : MQTT::Protocol::Version) : MQTT::Protocol::Connect
-  MQTT::Protocol::Connect.new("c", true, 10u16, nil, nil, nil, version)
+  MQTT::Protocol::Connect.new("c", keep_alive: 10u16, version: version)
 end
 
 # Once negotiated the version is fixed for the connection's life: a later

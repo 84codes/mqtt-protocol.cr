@@ -90,6 +90,7 @@ module MQTT
         len.to_u32
       end
 
+      # ameba:disable Metrics/CyclomaticComplexity
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         io.ensure_packet_budget(remaining_length.to_u32)

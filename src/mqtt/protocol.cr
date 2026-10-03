@@ -1,5 +1,7 @@
 require "./protocol/errors"
+require "./protocol/version"
 require "./protocol/io"
+require "./protocol/properties"
 require "./protocol/packets"
 
 module MQTT

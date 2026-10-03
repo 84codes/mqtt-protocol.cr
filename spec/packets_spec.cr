@@ -4,11 +4,11 @@ describe MQTT::Protocol::Packet do
   describe "#from_io" do
     it "should raise error on invalid type" do
       mio = IO::Memory.new
-      mio.write_byte 0xF0u8
+      mio.write_byte 0x00u8 # type 0 is reserved/forbidden (15 is now AUTH)
       mio.write_byte 0u8
       mio.rewind
 
-      io = MQTT::Protocol::IO.new(mio)
+      io = MQTT::Protocol::IO.v3(mio)
 
       expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid packet type/) do
         MQTT::Protocol::Packet.from_io(io)
@@ -18,20 +18,20 @@ describe MQTT::Protocol::Packet do
     describe "Connect" do
       it "validates flags" do
         mio = IO::Memory.new
-        io = MQTT::Protocol::IO.new(mio)
+        io = MQTT::Protocol::IO.v3(mio)
         io.write_byte 0b00010100u8 # connect
         io.write_remaining_length 10u8
         mio.rewind
 
         expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-          MQTT::Protocol::Packet.from_io(mio)
+          MQTT::Protocol::IO.v3(mio).read_packet
         end
       end
 
       describe "#from_io" do
         it "validates protocol name" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length 16u8
           io.write_string "FOOO"
@@ -42,13 +42,13 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::UnacceptableProtocolVersion, /invalid protocol/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "validates protocol name length" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length 18u8
           io.write_string "too long"
@@ -59,31 +59,33 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::UnacceptableProtocolVersion, /invalid protocol/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "validates protocol version" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length 10u8
           io.write_string "MQTT"
-          io.write_byte 5u8
+          io.write_byte 6u8 # unsupported protocol level (4 = 3.1.1, 5 = 5.0)
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::UnacceptableProtocolVersion) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "client_id is parsed" do
           client_id = "foobar"
 
-          remaining_length = client_id.bytesize + 10
+          # protocol name "MQTT"(2-byte len + 4) + protocol(1) + flags(1) +
+          # keepalive(2) + client-id 2-byte len prefix(2) = 12, plus the id bytes
+          remaining_length = client_id.bytesize + 12
 
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length remaining_length.to_u8
           io.write_string "MQTT"
@@ -93,18 +95,18 @@ describe MQTT::Protocol::Packet do
           io.write_string client_id
           mio.rewind
 
-          connect = MQTT::Protocol::Packet.from_io(mio)
+          connect = MQTT::Protocol::IO.v3(mio).read_packet
 
           connect = connect.should be_a MQTT::Protocol::Connect
           connect.client_id.should eq "foobar"
           connect.keepalive.should eq 60
         end
 
-        it "validates the connect flags based on will [MQTT-3.1.2-11]" do
+        it "validates the connect flags based on will [MQTT-3.1.2-11 v3.1.1]" do
           remaining_length = 10
 
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length remaining_length.to_u8
           io.write_string "MQTT"
@@ -113,13 +115,13 @@ describe MQTT::Protocol::Packet do
           io.write_int 60u16         # keepalive = 60
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
-        it "validates that the password flag is not set when username flag is no set [MQTT-3.1.2-22]" do
+        it "validates that the password flag is not set when username flag is no set [MQTT-3.1.2-22 v3.1.1]" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00010000u8 # connect
           io.write_remaining_length 10u8
           io.write_string "MQTT"
@@ -128,15 +130,17 @@ describe MQTT::Protocol::Packet do
           io.write_int 60u16         # keepalive = 60
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "validates that clean_session is false when empty client_id" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00010000u8 # connect
-          io.write_remaining_length 10u8
+          # protocol name "MQTT"(2-byte len + 4) + protocol(1) + flags(1) +
+          # keepalive(2) + empty client-id 2-byte len prefix(2) = 12
+          io.write_remaining_length 12u8
           io.write_string "MQTT"
           io.write_byte 4u8          # protocol = 4 (3.1.1)
           io.write_byte 0b00000000u8 # Connect flags
@@ -144,7 +148,7 @@ describe MQTT::Protocol::Packet do
           io.write_string ""
           mio.rewind
           expect_raises(MQTT::Protocol::Error::IdentifierRejected) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
       end
@@ -152,7 +156,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           client_id = "client-foo"
           clean_session = false
@@ -185,14 +189,14 @@ describe MQTT::Protocol::Packet do
           # Test MQTT 3.1 protocol by directly writing a Connect packet with version 0x03
           # and verifying it's read back correctly
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           # Write packet header
           io.write_byte(0b00010000u8) # Connect packet
 
           # Build the packet content in a separate IO to calculate length
           content = IO::Memory.new
-          content_io = MQTT::Protocol::IO.new(content)
+          content_io = MQTT::Protocol::IO.v3(content)
           content_io.write_string("MQIsdp")
           content_io.write_byte(0x03u8)            # MQTT 3.1 version
           content_io.write_byte(0b00000010u8)      # Connect flags - clean session
@@ -207,7 +211,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           # Read back and verify
-          packet = MQTT::Protocol::Packet.from_io(io)
+          packet = MQTT::Protocol::Packet.from_io(MQTT::Protocol::IO.new(mio))
           packet.should be_a MQTT::Protocol::Connect
 
           # Reset and read again to verify protocol name and version
@@ -243,14 +247,14 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00100000u8  # connack
           io.write_remaining_length 2 # always 2
           io.write_byte 0b00000001u8  # connack flags, session present=1
           io.write_byte 0u8           # return code, 0 = Accepted
           mio.rewind
 
-          connect = MQTT::Protocol::Packet.from_io(mio)
+          connect = MQTT::Protocol::IO.v3(mio).read_packet
 
           connect = connect.should be_a MQTT::Protocol::Connack
           connect.session_present?.should be_true
@@ -259,19 +263,19 @@ describe MQTT::Protocol::Packet do
 
         it "validates flags" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00100100u8  # connack
           io.write_remaining_length 2 # always 2
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "validates connack flags" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b00100000u8  # connack
           io.write_remaining_length 2 # always 2
           io.write_byte 0b00100001u8  # connack flags, session present=1
@@ -279,7 +283,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::InvalidConnackFlags) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
       end
@@ -287,7 +291,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           connack = MQTT::Protocol::Connack.new(false, MQTT::Protocol::Connack::ReturnCode::Accepted)
           connack.to_io(io)
@@ -306,7 +310,7 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           topic = "a/b/c"
           payload = "foobar and barfoo".to_slice
@@ -328,7 +332,7 @@ describe MQTT::Protocol::Packet do
 
         it "raises error if dup is set for QoS 0 messages" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           topic = "a/b/c"
           payload = "foobar and barfoo".to_slice
@@ -348,7 +352,7 @@ describe MQTT::Protocol::Packet do
 
         it "raises PacketDecode if topic contains wildcard" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           topic = "a/+/c"
           payload = "foobar and barfoo".to_slice
@@ -370,7 +374,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           topic = "a/b/c"
           payload = "foobar and barfoo".to_slice
@@ -399,7 +403,7 @@ describe MQTT::Protocol::Packet do
 
         it "does not raise error when dup is unset for QoS 0 messages" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           topic = "a/b/c"
           payload = "foobar and barfoo".to_slice
@@ -450,14 +454,14 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           packet_id = 123
           io.write_byte(4u8 << 4)
           io.write_remaining_length 2
           io.write_int packet_id
           mio.rewind
 
-          puback = MQTT::Protocol::Packet.from_io(mio)
+          puback = MQTT::Protocol::IO.v3(mio).read_packet
           puback = puback.should be_a MQTT::Protocol::PubAck
           puback.packet_id.should eq packet_id
         end
@@ -465,7 +469,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           packet_id = 123u16
           puback = MQTT::Protocol::PubAck.new(packet_id)
           puback.to_io(io)
@@ -482,14 +486,14 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           packet_id = 123
           io.write_byte(5u8 << 4)
           io.write_remaining_length 2
           io.write_int packet_id
           mio.rewind
 
-          pubrec = MQTT::Protocol::Packet.from_io(mio)
+          pubrec = MQTT::Protocol::IO.v3(mio).read_packet
           pubrec = pubrec.should be_a MQTT::Protocol::PubRec
           pubrec.packet_id.should eq packet_id
         end
@@ -498,7 +502,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           packet_id = 123u16
           pubrec = MQTT::Protocol::PubRec.new(packet_id)
           pubrec.to_io(io)
@@ -515,14 +519,14 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           packet_id = 123
           io.write_byte (6u8 << 4) | 2u8
           io.write_remaining_length 2
           io.write_int packet_id
           mio.rewind
 
-          pubrel = MQTT::Protocol::Packet.from_io(mio)
+          pubrel = MQTT::Protocol::IO.v3(mio).read_packet
           pubrel = pubrel.should be_a MQTT::Protocol::PubRel
           pubrel.packet_id.should eq packet_id
         end
@@ -530,7 +534,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           packet_id = 123u16
           pubrel = MQTT::Protocol::PubRel.new(packet_id)
           pubrel.to_io(io)
@@ -547,36 +551,49 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           packet_id = 123
-          io.write_byte 7u8 << 4
+          io.write_byte(7u8 << 4) # PUBCOMP reserved flags are 0b0000
           io.write_remaining_length 2
           io.write_int packet_id
           mio.rewind
 
-          pubcomp = MQTT::Protocol::Packet.from_io(mio)
+          pubcomp = MQTT::Protocol::IO.v3(mio).read_packet
           pubcomp = pubcomp.should be_a MQTT::Protocol::PubComp
           pubcomp.packet_id.should eq packet_id
         end
 
         it "still accepts the 0b0010 flags this library wrote up to v0.3.1" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte (7u8 << 4) | 2u8
           io.write_remaining_length 2
           io.write_int 123
           mio.rewind
 
-          pubcomp = MQTT::Protocol::Packet.from_io(mio)
+          pubcomp = MQTT::Protocol::IO.v3(mio).read_packet
           pubcomp = pubcomp.should be_a MQTT::Protocol::PubComp
           pubcomp.packet_id.should eq 123
+        end
+
+        it "keeps the other acks strict about the reserved flags" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.v3(mio)
+          io.write_byte (4u8 << 4) | 2u8
+          io.write_remaining_length 2
+          io.write_int 123
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::InvalidFlags) do
+            MQTT::Protocol::IO.v3(mio).read_packet
+          end
         end
       end
 
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           packet_id = 123u16
           pubcomp = MQTT::Protocol::PubComp.new(packet_id)
           pubcomp.to_io(io)
@@ -587,9 +604,9 @@ describe MQTT::Protocol::Packet do
           pubcomp.packet_id.should eq packet_id
         end
 
-        it "writes the reserved flags as 0 [MQTT-3.7.1]" do
+        it "writes the reserved flags as 0 [MQTT-2.1.3-1]" do
           mio = IO::Memory.new
-          MQTT::Protocol::PubComp.new(123u16).to_io(MQTT::Protocol::IO.new(mio))
+          MQTT::Protocol::PubComp.new(123u16).to_io(MQTT::Protocol::IO.v3(mio))
           mio.rewind
           # 0x70, not 0x72: only PUBREL, SUBSCRIBE and UNSUBSCRIBE carry 0b0010.
           mio.to_slice[0].should eq 0x70u8
@@ -600,7 +617,7 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10000010u8 # Subscribe
           # 2 for variable header, 2 for Int32, topic size and qos
           io.write_remaining_length 2 + 2 + "MyTopicFilter".bytesize + 1
@@ -609,7 +626,7 @@ describe MQTT::Protocol::Packet do
           io.write_byte(1u8)
           mio.rewind
 
-          subscribe = MQTT::Protocol::Packet.from_io(mio)
+          subscribe = MQTT::Protocol::IO.v3(mio).read_packet
           subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
           subscribe.packet_id.should eq 55u16
           subscribe.topic_filters.first.topic.should eq "MyTopicFilter"
@@ -618,29 +635,29 @@ describe MQTT::Protocol::Packet do
 
         it "raises if flags are not set" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10000000u8 # Subscribe
           io.write_remaining_length 2
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "raises if length is less than or eq to 2" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10000010u8 # Subscribe
           io.write_remaining_length 2
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode, /protocol violation/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "raises if QoS is > 2" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10000010u8 # Subscribe
           # 2 for variable header, 2 for Int32, topic size and qos
           io.write_remaining_length 2 + 2 + "MyTopicFilter".bytesize + 1
@@ -650,7 +667,7 @@ describe MQTT::Protocol::Packet do
           mio.rewind
 
           expect_raises(MQTT::Protocol::Error::PacketDecode) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
@@ -658,7 +675,7 @@ describe MQTT::Protocol::Packet do
           it "should not support '#' not in the end" do
             topic = "a/#/b"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -668,14 +685,14 @@ describe MQTT::Protocol::Packet do
             mio.rewind
 
             expect_raises(MQTT::Protocol::Error::PacketDecode) do
-              MQTT::Protocol::Packet.from_io(mio)
+              MQTT::Protocol::IO.v3(mio).read_packet
             end
           end
 
           it "should support '#' in the end" do
             topic = "a/#"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -683,7 +700,7 @@ describe MQTT::Protocol::Packet do
             io.write_string(topic)
             io.write_byte(1u8)
             mio.rewind
-            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = MQTT::Protocol::IO.v3(mio).read_packet
             subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
@@ -691,7 +708,7 @@ describe MQTT::Protocol::Packet do
           it "should not support '#' on a combined topic level" do
             topic = "a/as#"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -700,14 +717,14 @@ describe MQTT::Protocol::Packet do
             io.write_byte(1u8)
             mio.rewind
             expect_raises(MQTT::Protocol::Error::PacketDecode) do
-              MQTT::Protocol::Packet.from_io(mio)
+              MQTT::Protocol::IO.v3(mio).read_packet
             end
           end
 
           it "should support only '#'" do
             topic = "#"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -715,7 +732,7 @@ describe MQTT::Protocol::Packet do
             io.write_string(topic)
             io.write_byte(1u8)
             mio.rewind
-            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = MQTT::Protocol::IO.v3(mio).read_packet
             subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
@@ -723,7 +740,7 @@ describe MQTT::Protocol::Packet do
           it "should not support multiple '#'" do
             topic = "a/#/s/#"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -732,7 +749,7 @@ describe MQTT::Protocol::Packet do
             io.write_byte(1u8)
             mio.rewind
             expect_raises(MQTT::Protocol::Error::PacketDecode) do
-              MQTT::Protocol::Packet.from_io(mio)
+              MQTT::Protocol::IO.v3(mio).read_packet
             end
           end
         end
@@ -741,7 +758,7 @@ describe MQTT::Protocol::Packet do
           it "should support '+' not in the end" do
             topic = "a/+/b"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -750,7 +767,7 @@ describe MQTT::Protocol::Packet do
             io.write_byte(1u8)
             mio.rewind
 
-            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = MQTT::Protocol::IO.v3(mio).read_packet
             subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
@@ -758,7 +775,7 @@ describe MQTT::Protocol::Packet do
           it "should not support '+' unless covers entire topic level" do
             topic = "a/a+/b"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -768,14 +785,14 @@ describe MQTT::Protocol::Packet do
             mio.rewind
 
             expect_raises(MQTT::Protocol::Error::PacketDecode) do
-              MQTT::Protocol::Packet.from_io(mio)
+              MQTT::Protocol::IO.v3(mio).read_packet
             end
           end
 
           it "should support '+' in first level" do
             topic = "+/a/b"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -784,7 +801,7 @@ describe MQTT::Protocol::Packet do
             io.write_byte(1u8)
             mio.rewind
 
-            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = MQTT::Protocol::IO.v3(mio).read_packet
             subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
@@ -792,7 +809,7 @@ describe MQTT::Protocol::Packet do
           it "should support '+' in last level" do
             topic = "a/b/+"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -801,7 +818,7 @@ describe MQTT::Protocol::Packet do
             io.write_byte(1u8)
             mio.rewind
 
-            subscribe = MQTT::Protocol::Packet.from_io(mio)
+            subscribe = MQTT::Protocol::IO.v3(mio).read_packet
             subscribe = subscribe.should be_a MQTT::Protocol::Subscribe
             subscribe.topic_filters.first.topic.should eq topic
           end
@@ -809,7 +826,7 @@ describe MQTT::Protocol::Packet do
           it "should not support a/+b/c+/#" do
             topic = "a/+b/c+/#"
             mio = IO::Memory.new
-            io = MQTT::Protocol::IO.new(mio)
+            io = MQTT::Protocol::IO.v3(mio)
             io.write_byte 0b10000010u8 # Subscribe
             # 2 for variable header, 2 for Int32, topic size and qos
             io.write_remaining_length 2 + 2 + topic.bytesize + 1
@@ -819,7 +836,7 @@ describe MQTT::Protocol::Packet do
             mio.rewind
 
             expect_raises(MQTT::Protocol::Error::PacketDecode) do
-              MQTT::Protocol::Packet.from_io(mio)
+              MQTT::Protocol::IO.v3(mio).read_packet
             end
           end
         end
@@ -828,7 +845,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           topic_filters = [MQTT::Protocol::Subscribe::TopicFilter.new("My/topic/filter", 0),
                            MQTT::Protocol::Subscribe::TopicFilter.new("My/topic/filter1", 1),
                            MQTT::Protocol::Subscribe::TopicFilter.new("My/topic/filter2", 2)]
@@ -847,7 +864,7 @@ describe MQTT::Protocol::Packet do
 
         it "should not allow empty TopicFilters" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           topic_filters = [] of MQTT::Protocol::Subscribe::TopicFilter
           subscribe = MQTT::Protocol::Subscribe.new(topic_filters, 65u16)
           expect_raises(MQTT::Protocol::Error::PacketEncode) do
@@ -861,7 +878,7 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10010000u8      # SubAck
           io.write_remaining_length 2 + 4 # 2 for variable header, 1 for each 4 UInt8
           io.write_int(50u16)
@@ -871,48 +888,48 @@ describe MQTT::Protocol::Packet do
           io.write_byte(128u8)
           mio.rewind
 
-          suback = MQTT::Protocol::Packet.from_io(mio)
+          suback = MQTT::Protocol::IO.v3(mio).read_packet
           suback = suback.should be_a MQTT::Protocol::SubAck
           suback.packet_id.should eq 50u16
-          suback.return_codes[0].should eq MQTT::Protocol::SubAck::ReturnCode::QoS0
-          suback.return_codes[1].should eq MQTT::Protocol::SubAck::ReturnCode::QoS1
-          suback.return_codes[2].should eq MQTT::Protocol::SubAck::ReturnCode::QoS2
-          suback.return_codes[3].should eq MQTT::Protocol::SubAck::ReturnCode::Failure
+          suback.reason_codes[0].should eq MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0
+          suback.reason_codes[1].should eq MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1
+          suback.reason_codes[2].should eq MQTT::Protocol::SubAck::ReasonCode::GrantedQoS2
+          suback.reason_codes[3].should eq MQTT::Protocol::SubAck::ReasonCode::UnspecifiedError
         end
 
         it "is has invalid return Code" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10010000u8      # SubAck
           io.write_remaining_length 2 + 1 # 2 for variable header, 1 for each 4 UInt8
           io.write_int(50u16)
           io.write_byte(5u8)
           mio.rewind
 
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid return code 5/) do
-            MQTT::Protocol::Packet.from_io(mio)
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid suback return code 5/) do
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "raises if flags are set" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10010001u8 # SubAck
           io.write_remaining_length 2
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid flags/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "raises if length is less than or eq to 2" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10010000u8 # SubAck
           io.write_remaining_length 2
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode, /protocol violation/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
       end
@@ -920,12 +937,12 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
-          return_codes = [MQTT::Protocol::SubAck::ReturnCode::QoS0,
-                          MQTT::Protocol::SubAck::ReturnCode::QoS1,
-                          MQTT::Protocol::SubAck::ReturnCode::QoS2,
-                          MQTT::Protocol::SubAck::ReturnCode::Failure]
-          suback = MQTT::Protocol::SubAck.new(return_codes, 65u16)
+          io = MQTT::Protocol::IO.v3(mio)
+          reason_codes = [MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0,
+                          MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1,
+                          MQTT::Protocol::SubAck::ReasonCode::GrantedQoS2,
+                          MQTT::Protocol::SubAck::ReasonCode::UnspecifiedError]
+          suback = MQTT::Protocol::SubAck.new(reason_codes, 65u16)
           suback.to_io(io)
 
           mio.rewind
@@ -933,8 +950,8 @@ describe MQTT::Protocol::Packet do
           suback = MQTT::Protocol::Packet.from_io(io)
           suback = suback.should be_a MQTT::Protocol::SubAck
           suback.packet_id.should eq 65u16
-          suback.return_codes.each_with_index do |return_code, index|
-            return_code.should eq return_codes[index]
+          suback.reason_codes.each_with_index do |reason_code, index|
+            reason_code.should eq reason_codes[index]
           end
         end
       end
@@ -944,14 +961,14 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10100010u8                           # Unsubscribe
           io.write_remaining_length 2 + 2 + "MyTopic".bytesize # 2 for variable header, 2 for Int32
           io.write_int(50u16)
           io.write_string("MyTopic")
           mio.rewind
 
-          unsubscribe = MQTT::Protocol::Packet.from_io(mio)
+          unsubscribe = MQTT::Protocol::IO.v3(mio).read_packet
           unsubscribe = unsubscribe.should be_a MQTT::Protocol::Unsubscribe
           unsubscribe.packet_id.should eq 50u16
           unsubscribe.topics.first.should eq "MyTopic"
@@ -964,7 +981,7 @@ describe MQTT::Protocol::Packet do
             length += 2 + topic.bytesize
           end
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10100010u8           # Unsubscribe
           io.write_remaining_length 2 + length # 2 for variable header, rest is length
           io.write_int(50u16)
@@ -973,7 +990,7 @@ describe MQTT::Protocol::Packet do
           end
           mio.rewind
 
-          unsubscribe = MQTT::Protocol::Packet.from_io(mio)
+          unsubscribe = MQTT::Protocol::IO.v3(mio).read_packet
           unsubscribe = unsubscribe.should be_a MQTT::Protocol::Unsubscribe
           unsubscribe.packet_id.should eq 50u16
           unsubscribe.topics.size.should eq 4
@@ -984,23 +1001,23 @@ describe MQTT::Protocol::Packet do
 
         it "raises if flags are not set" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10100000u8 # Unsubscribe
           io.write_remaining_length 2
           mio.rewind
           expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "raises if length is larger than 2" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10100010u8 # Unsubscribe
           io.write_remaining_length 2
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode, /protocol violation/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
       end
@@ -1008,7 +1025,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           topics = ["abc", "def", "ghij"]
           unsubscribe = MQTT::Protocol::Unsubscribe.new(topics, 65u16)
           unsubscribe.to_io(io)
@@ -1029,36 +1046,51 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10110000u8  # UnsubAck
           io.write_remaining_length 2 # always 0
           io.write_int(50u16)
           mio.rewind
 
-          unsuback = MQTT::Protocol::Packet.from_io(mio)
+          unsuback = MQTT::Protocol::IO.v3(mio).read_packet
           unsuback = unsuback.should be_a MQTT::Protocol::UnsubAck
           unsuback.packet_id.should eq 50u16
         end
 
         it "raises if flags are set" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10110010u8 # UnsubAck
           io.write_remaining_length 2
           mio.rewind
           expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "raises if length is not 2" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b10110000u8 # UnsubAck
           io.write_remaining_length 0
           mio.rewind
-          expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid length/) do
-            MQTT::Protocol::Packet.from_io(mio)
+          # Too short for the packet id: rejected by the packet byte budget.
+          expect_raises(MQTT::Protocol::Error::PacketDecode) do
+            MQTT::Protocol::IO.v3(mio).read_packet
+          end
+        end
+
+        it "raises if a v3 UNSUBACK carries payload bytes" do
+          mio = IO::Memory.new
+          io = MQTT::Protocol::IO.v3(mio)
+          io.write_byte 0b10110000u8 # UnsubAck
+          io.write_remaining_length 3
+          io.write_int 50u16
+          io.write_byte 0x00u8 # v3 UNSUBACK has no payload
+          mio.rewind
+          # Trailing byte: rejected by the dispatcher's finish_packet.
+          expect_raises(MQTT::Protocol::Error::ProtocolError, /trailing/) do
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
       end
@@ -1066,7 +1098,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           unsuback = MQTT::Protocol::UnsubAck.new(65534u16)
           unsuback.to_io(io)
@@ -1084,33 +1116,33 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b11000000u8  # PingReq
           io.write_remaining_length 0 # always 0
           mio.rewind
 
-          pingreq = MQTT::Protocol::Packet.from_io(mio)
+          pingreq = MQTT::Protocol::IO.v3(mio).read_packet
           pingreq.should be_a MQTT::Protocol::PingReq
         end
         it "raises if flags are set" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b11000010u8  # PingReq
           io.write_remaining_length 0 # always 0
           mio.rewind
           expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "raises if length is not 0" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b11000000u8 # PingReq
           io.write_remaining_length 1
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid length/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
       end
@@ -1118,7 +1150,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           pingreq = MQTT::Protocol::PingReq.new
           pingreq.to_io(io)
@@ -1135,33 +1167,33 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b11010000u8  # PingResp
           io.write_remaining_length 0 # always 0
           mio.rewind
 
-          ping_req = MQTT::Protocol::Packet.from_io(mio)
+          ping_req = MQTT::Protocol::IO.v3(mio).read_packet
           ping_req.should be_a MQTT::Protocol::PingResp
         end
         it "raises if flags are set" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b11010010u8  # PingResp
           io.write_remaining_length 0 # always 0
           mio.rewind
           expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "raises if length is not 0" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b11010000u8 # PingResp
           io.write_remaining_length 1
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid length/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
       end
@@ -1169,7 +1201,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           pingresp = MQTT::Protocol::PingResp.new
           pingresp.to_io(io)
@@ -1186,34 +1218,34 @@ describe MQTT::Protocol::Packet do
       describe "#from_io" do
         it "is parsed" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b11100000u8  # Disconnect
           io.write_remaining_length 0 # always 0
           mio.rewind
 
-          disconnect = MQTT::Protocol::Packet.from_io(mio)
+          disconnect = MQTT::Protocol::IO.v3(mio).read_packet
           disconnect.should be_a MQTT::Protocol::Disconnect
         end
 
         it "raises if flags are set" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b11100100u8  # Disconnect
           io.write_remaining_length 0 # always 0
           mio.rewind
           expect_raises(MQTT::Protocol::Error::InvalidFlags) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
 
         it "raises if length is not 0" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
           io.write_byte 0b11100000u8 # Disconnect
           io.write_remaining_length 1
           mio.rewind
           expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid length/) do
-            MQTT::Protocol::Packet.from_io(mio)
+            MQTT::Protocol::IO.v3(mio).read_packet
           end
         end
       end
@@ -1221,7 +1253,7 @@ describe MQTT::Protocol::Packet do
       describe "#to_io" do
         it "can write" do
           mio = IO::Memory.new
-          io = MQTT::Protocol::IO.new(mio)
+          io = MQTT::Protocol::IO.v3(mio)
 
           disconnect = MQTT::Protocol::Disconnect.new
           disconnect.to_io(io)
@@ -1233,5 +1265,19 @@ describe MQTT::Protocol::Packet do
         end
       end
     end
+  end
+end
+
+# 1.4: an unmappable v5 reason on a v3 CONNACK must raise BEFORE any byte
+# goes on the wire - a partial fixed header would desync the stream.
+describe "v3 CONNACK with unmappable reason" do
+  it "raises before writing anything" do
+    mio = IO::Memory.new
+    io = MQTT::Protocol::IO.v3(mio)
+    connack = MQTT::Protocol::Connack.new(false, MQTT::Protocol::Connack::ReasonCode::ServerBusy)
+    expect_raises(MQTT::Protocol::Error::PacketEncode, /no v3 return code/) do
+      io.write_packet(connack)
+    end
+    mio.size.should eq 0
   end
 end

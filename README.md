@@ -41,7 +41,8 @@ Code comments and specs cite MQTT 5.0 statement ids, e.g. `[MQTT-3.8.3-5]`. A ru
 - [x] MQTT-2.3.1-1
   >SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
 
-  Covered in the serializing of each packet.
+  Covered in the deserializing of each packet: `IO#read_packet_id` raises
+  `ProtocolError` (0x82) for id 0, on every packet that carries one.
 
 - [x] MQTT-2.3.1-5
   >A PUBLISH Packet MUST NOT contain a Packet Identifier if its QoS value is set to 0.

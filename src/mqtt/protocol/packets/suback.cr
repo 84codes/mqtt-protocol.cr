@@ -37,7 +37,7 @@ module MQTT
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
         decode_assert remaining_length > 2, "protocol violation"
         io.ensure_packet_budget(remaining_length)
-        packet_id = io.read_int
+        packet_id = io.read_packet_id
         properties = io.read_properties(SubAckProperties)
         reason_codes = Array(ReasonCode).new
         while io.remaining_in_packet > 0

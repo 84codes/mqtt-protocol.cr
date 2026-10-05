@@ -265,6 +265,15 @@ module MQTT
         UInt16.from_io(@io, @byte_format)
       end
 
+      # Every packet that carries a Packet Identifier needs a non-zero one: the
+      # sender assigns non-zero ids [MQTT-2.2.1-3] [MQTT-2.2.1-4], and an ack
+      # echoes the id it answers [MQTT-2.2.1-5] [MQTT-2.2.1-6].
+      def read_packet_id : UInt16
+        id = read_int
+        raise Error::ProtocolError.new(0x82u8, "packet identifier 0") if id.zero?
+        id
+      end
+
       def read_four_byte_int : UInt32
         @budget.charge(sizeof(UInt32))
         UInt32.from_io(@io, @byte_format)

@@ -23,7 +23,7 @@ module MQTT
         decode_assert remaining_length > 2, "protocol violation"
         io.ensure_packet_budget(remaining_length)
 
-        packet_id = io.read_int
+        packet_id = io.read_packet_id
         properties = io.read_properties(UnsubscribeProperties)
         topics = Array(String).new
         while io.remaining_in_packet > 0

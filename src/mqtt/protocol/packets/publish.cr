@@ -83,7 +83,7 @@ module MQTT
         io.ensure_packet_budget(remaining_length)
         topic = io.read_bytes
         if qos.positive?
-          packet_id = io.read_int
+          packet_id = io.read_packet_id
         else
           decode_assert dup == false, "DUP must be 0 for QoS 0 messages"
         end

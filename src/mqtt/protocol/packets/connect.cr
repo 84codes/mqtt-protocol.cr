@@ -46,6 +46,9 @@ module MQTT
           # disconnect (expiry 0) or lasts until a clean connect, which v5 spells
           # as an expiry that never runs out (3.1.2.11.2). Any other expiry would
           # read differently from what goes on the wire.
+          # This follows the normative text, not the non-normative note in
+          # 3.1.2.11.2 equating CleanSession 0 with no expiry: absent reads as
+          # 0, which would end the session at disconnect.
           v3_expiry = @clean_start ? 0u32 : UInt32::MAX
           if (expiry = @properties.session_expiry_interval?) && expiry != v3_expiry
             raise ArgumentError.new("session expiry #{expiry} with clean_start: #{@clean_start} requires MQTT 5.0")

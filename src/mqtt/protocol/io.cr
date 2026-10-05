@@ -367,7 +367,7 @@ module MQTT
       end
 
       delegate validate_subscription_options, validate_packet_type,
-        validate_outbound_packet_type, validate_suback_reason,
+        validate_outbound_packet_type, suback_code_byte,
         read_connack_reason, read_suback_reason, connack_code_byte,
         allow_empty_topic?, unsuback_payload?, to: @framing
 
@@ -482,9 +482,9 @@ module MQTT
           # with a free return type; both subclasses still override it, so the
           # base body is never reached.
 
-          # Parse a properties section (an empty one on v3, where there is no
-          # section on the wire). Bounds come from the packet byte budget, so a
-          # peer cannot drive a read past the packet.
+          # Parse a properties section (on v3, where there is no section on the
+          # wire, the struct's `v3_equivalent`). Bounds come from the packet byte
+          # budget, so a peer cannot drive a read past the packet.
           def read_properties(io : IO, klass : T.class) : T forall T
             raise NotImplementedError.new("read_properties")
           end
@@ -522,9 +522,9 @@ module MQTT
           # Every packet's `to_io` calls it first.
           abstract def validate_outbound_packet_type(type : UInt8) : Nil
 
-          # Write-side mirror of read_suback_reason: reject SUBACK reason codes
-          # this version cannot express, raising before any byte is written.
-          abstract def validate_suback_reason(reason_code : SubAck::ReasonCode) : Nil
+          # The SUBACK payload byte for this version: the v5 reason code, or on v3
+          # the granted QoS or the single v3 failure code 0x80.
+          abstract def suback_code_byte(reason_code : SubAck::ReasonCode) : UInt8
 
           # Interpret a CONNACK code byte: a v3 return code or a v5 reason code.
           abstract def read_connack_reason(byte : UInt8)
@@ -561,7 +561,7 @@ module MQTT
           V3_1_1 = new(Version::V3_1_1)
 
           def read_properties(io : IO, klass : T.class) : T forall T
-            klass.new
+            klass.v3_equivalent
           end
 
           def write_properties(io : IO, properties) : Nil
@@ -579,7 +579,7 @@ module MQTT
             unless remaining_length.zero?
               raise Error::PacketDecode.new "invalid length #{remaining_length} for v3"
             end
-            {nil, properties_klass.new}
+            {nil, properties_klass.v3_equivalent}
           end
 
           def write_reason_tail(io : IO, first_byte : UInt8, reason_value : UInt8, properties) : Nil
@@ -610,12 +610,11 @@ module MQTT
             end
           end
 
-          def validate_suback_reason(reason_code : SubAck::ReasonCode) : Nil
+          def suback_code_byte(reason_code : SubAck::ReasonCode) : UInt8
             # Only the granted-QoS values and 0x80 Failure exist in a v3.1.1
-            # SUBACK payload [MQTT-3.9.3-2 v3.1.1].
-            unless reason_code.value <= 2 || reason_code.value == 0x80
-              raise Error::PacketEncode.new "no v3 suback return code for #{reason_code}"
-            end
+            # SUBACK payload [MQTT-3.9.3-2 v3.1.1], and every v5 reason that grants
+            # nothing is a failure.
+            reason_code.value <= 2 ? reason_code.value : 0x80u8
           end
 
           def read_connack_reason(byte : UInt8)
@@ -738,7 +737,8 @@ module MQTT
           def validate_outbound_packet_type(type : UInt8) : Nil
           end
 
-          def validate_suback_reason(reason_code : SubAck::ReasonCode) : Nil
+          def suback_code_byte(reason_code : SubAck::ReasonCode) : UInt8
+            reason_code.value
           end
 
           def read_connack_reason(byte : UInt8)

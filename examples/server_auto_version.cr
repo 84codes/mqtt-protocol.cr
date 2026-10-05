@@ -32,8 +32,7 @@ def read_connect(io : MQTT::Protocol::IO) : MQTT::Protocol::Connect?
   io.read_connect
 rescue ex : MQTT::Protocol::Error::Connect
   # Bad protocol name or level, rejected client id, ...: every version has a code.
-  reject(io, MQTT::Protocol::Connack::ReasonCode.from_v3_return_code(
-    MQTT::Protocol::Connack::ReturnCode.new(ex.return_code)))
+  reject(io, ex.reason_code)
 rescue ex : MQTT::Protocol::Error::PacketDecode
   # Only v5 has CONNACK codes for a malformed CONNECT; v3 just closes.
   if io.version.v5? && (reason = MQTT::Protocol::Connack::ReasonCode.from_value?(ex.reason_code))
@@ -52,7 +51,7 @@ def serve(io : MQTT::Protocol::IO) : Nil
     case packet = io.read_packet
     when MQTT::Protocol::Publish
       # No QoS 2 flow here; v5 clients were told so by maximum_qos.
-      return disconnect(io, MQTT::Protocol::Disconnect::ReasonCode::QoSNotSupported) if packet.qos > 1
+      return disconnect(io, MQTT::Protocol::Disconnect::ReasonCode::QosNotSupported) if packet.qos > 1
       puts "#{packet.topic}: #{String.new(packet.payload)}"
       if packet_id = packet.packet_id # QoS 1
         io.write_packet MQTT::Protocol::PubAck.new(packet_id)
@@ -62,8 +61,8 @@ def serve(io : MQTT::Protocol::IO) : Nil
       io.write_packet MQTT::Protocol::SubAck.new(codes, packet.packet_id)
     when MQTT::Protocol::Unsubscribe
       # v3 framing drops the per-topic reason codes.
-      codes = packet.topics.map { MQTT::Protocol::UnsubAck::ReasonCode::Success }
-      io.write_packet MQTT::Protocol::UnsubAck.new(packet.packet_id, codes)
+      codes = packet.topic_filters.map { MQTT::Protocol::UnsubAck::ReasonCode::Success }
+      io.write_packet MQTT::Protocol::UnsubAck.new(codes, packet.packet_id)
     when MQTT::Protocol::PingReq
       io.write_packet MQTT::Protocol::PingResp.new
     when MQTT::Protocol::Disconnect
@@ -88,7 +87,7 @@ def disconnect(io : MQTT::Protocol::IO, reason : MQTT::Protocol::Disconnect::Rea
 end
 
 def suback_reason(filter : MQTT::Protocol::Subscribe::TopicFilter) : MQTT::Protocol::SubAck::ReasonCode
-  filter.qos.zero? ? MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0 : MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1
+  filter.qos.zero? ? MQTT::Protocol::SubAck::ReasonCode::GrantedQos0 : MQTT::Protocol::SubAck::ReasonCode::GrantedQos1
 end
 
 server = TCPServer.new("127.0.0.1", 1883)

@@ -99,7 +99,7 @@ describe MQTT::Protocol::Packet do
 
           connect = connect.should be_a MQTT::Protocol::Connect
           connect.client_id.should eq "foobar"
-          connect.keepalive.should eq 60
+          connect.keep_alive.should eq 60
         end
 
         it "validates the connect flags based on will [MQTT-3.1.2-11 v3.1.1]" do
@@ -167,11 +167,12 @@ describe MQTT::Protocol::Packet do
 
           connect = MQTT::Protocol::Connect.new(
             client_id: client_id,
-            clean_session: clean_session,
-            keepalive: keepalive,
+            clean_start: clean_session,
+            keep_alive: keepalive,
             username: username,
             password: password,
-            will: MQTT::Protocol::Will.new(wtopic, "will payload".to_slice, 1u8, false)
+            will: MQTT::Protocol::Will.new(wtopic, "will payload".to_slice, qos: 1u8),
+            version: MQTT::Protocol::Version::V3_1_1,
           )
 
           connect.to_io(io)
@@ -237,7 +238,7 @@ describe MQTT::Protocol::Packet do
       describe "#initialize" do
         it "does not support wildcard topics" do
           expect_raises(ArgumentError) do
-            MQTT::Protocol::Will.new("topic/#", "body".to_slice, 1, false)
+            MQTT::Protocol::Will.new("topic/#", "body".to_slice, qos: 1)
           end
         end
       end
@@ -258,7 +259,7 @@ describe MQTT::Protocol::Packet do
 
           connect = connect.should be_a MQTT::Protocol::Connack
           connect.session_present?.should be_true
-          connect.return_code.value.should eq 0u8
+          connect.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::Success
         end
 
         it "validates flags" do
@@ -293,14 +294,14 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.v3(mio)
 
-          connack = MQTT::Protocol::Connack.new(false, MQTT::Protocol::Connack::ReturnCode::Accepted)
+          connack = MQTT::Protocol::Connack.new(false, MQTT::Protocol::Connack::ReasonCode::Success)
           connack.to_io(io)
 
           mio.rewind
 
           connack = MQTT::Protocol::Packet.from_io(io)
           connack = connack.should be_a MQTT::Protocol::Connack
-          connack.return_code.should eq MQTT::Protocol::Connack::ReturnCode::Accepted
+          connack.reason_code.should eq MQTT::Protocol::Connack::ReasonCode::Success
           connack.session_present?.should be_false
         end
       end
@@ -379,7 +380,7 @@ describe MQTT::Protocol::Packet do
           topic = "a/b/c"
           payload = "foobar and barfoo".to_slice
           packet_id = 100u16
-          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+          publish = MQTT::Protocol::Publish.new(topic, payload, qos: 1, packet_id: packet_id)
           publish.to_io(io)
 
           mio.rewind
@@ -397,7 +398,7 @@ describe MQTT::Protocol::Packet do
           payload = "foobar and barfoo".to_slice
           packet_id = 100u16
           expect_raises(ArgumentError) do
-            MQTT::Protocol::Publish.new(topic, payload, packet_id, true, 0, false)
+            MQTT::Protocol::Publish.new(topic, payload, dup: true, packet_id: packet_id)
           end
         end
 
@@ -408,7 +409,7 @@ describe MQTT::Protocol::Packet do
           topic = "a/b/c"
           payload = "foobar and barfoo".to_slice
           packet_id = 100u16
-          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 0, false)
+          publish = MQTT::Protocol::Publish.new(topic, payload, packet_id: packet_id)
           publish.to_io(io)
           mio.rewind
 
@@ -427,7 +428,7 @@ describe MQTT::Protocol::Packet do
           payload = "foobar and barfoo".to_slice
           packet_id = 100u16
           expect_raises(ArgumentError) do
-            MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 3, false)
+            MQTT::Protocol::Publish.new(topic, payload, qos: 3, packet_id: packet_id)
           end
         end
 
@@ -438,12 +439,12 @@ describe MQTT::Protocol::Packet do
             packet_id = 100u16
 
             expect_raises(ArgumentError) do
-              MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+              MQTT::Protocol::Publish.new(topic, payload, qos: 1, packet_id: packet_id)
             end
 
             topic = "a/+/c"
             expect_raises(ArgumentError) do
-              MQTT::Protocol::Publish.new(topic, payload, packet_id, false, 1, false)
+              MQTT::Protocol::Publish.new(topic, payload, qos: 1, packet_id: packet_id)
             end
           end
         end
@@ -891,9 +892,9 @@ describe MQTT::Protocol::Packet do
           suback = MQTT::Protocol::IO.v3(mio).read_packet
           suback = suback.should be_a MQTT::Protocol::SubAck
           suback.packet_id.should eq 50u16
-          suback.reason_codes[0].should eq MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0
-          suback.reason_codes[1].should eq MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1
-          suback.reason_codes[2].should eq MQTT::Protocol::SubAck::ReasonCode::GrantedQoS2
+          suback.reason_codes[0].should eq MQTT::Protocol::SubAck::ReasonCode::GrantedQos0
+          suback.reason_codes[1].should eq MQTT::Protocol::SubAck::ReasonCode::GrantedQos1
+          suback.reason_codes[2].should eq MQTT::Protocol::SubAck::ReasonCode::GrantedQos2
           suback.reason_codes[3].should eq MQTT::Protocol::SubAck::ReasonCode::UnspecifiedError
         end
 
@@ -938,9 +939,9 @@ describe MQTT::Protocol::Packet do
         it "can write" do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.v3(mio)
-          reason_codes = [MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0,
-                          MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1,
-                          MQTT::Protocol::SubAck::ReasonCode::GrantedQoS2,
+          reason_codes = [MQTT::Protocol::SubAck::ReasonCode::GrantedQos0,
+                          MQTT::Protocol::SubAck::ReasonCode::GrantedQos1,
+                          MQTT::Protocol::SubAck::ReasonCode::GrantedQos2,
                           MQTT::Protocol::SubAck::ReasonCode::UnspecifiedError]
           suback = MQTT::Protocol::SubAck.new(reason_codes, 65u16)
           suback.to_io(io)
@@ -971,7 +972,7 @@ describe MQTT::Protocol::Packet do
           unsubscribe = MQTT::Protocol::IO.v3(mio).read_packet
           unsubscribe = unsubscribe.should be_a MQTT::Protocol::Unsubscribe
           unsubscribe.packet_id.should eq 50u16
-          unsubscribe.topics.first.should eq "MyTopic"
+          unsubscribe.topic_filters.first.should eq "MyTopic"
         end
 
         it "handles multiple topics" do
@@ -993,8 +994,8 @@ describe MQTT::Protocol::Packet do
           unsubscribe = MQTT::Protocol::IO.v3(mio).read_packet
           unsubscribe = unsubscribe.should be_a MQTT::Protocol::Unsubscribe
           unsubscribe.packet_id.should eq 50u16
-          unsubscribe.topics.size.should eq 4
-          unsubscribe.topics.each_with_index do |topic, index|
+          unsubscribe.topic_filters.size.should eq 4
+          unsubscribe.topic_filters.each_with_index do |topic, index|
             topic.should eq topics[index]
           end
         end
@@ -1035,7 +1036,7 @@ describe MQTT::Protocol::Packet do
           unsubscribe = MQTT::Protocol::Packet.from_io(io)
           unsubscribe = unsubscribe.should be_a MQTT::Protocol::Unsubscribe
           unsubscribe.packet_id.should eq 65u16
-          unsubscribe.topics.each_with_index do |topic, index|
+          unsubscribe.topic_filters.each_with_index do |topic, index|
             topic.should eq topics[index]
           end
         end
@@ -1100,7 +1101,7 @@ describe MQTT::Protocol::Packet do
           mio = IO::Memory.new
           io = MQTT::Protocol::IO.v3(mio)
 
-          unsuback = MQTT::Protocol::UnsubAck.new(65534u16)
+          unsuback = MQTT::Protocol::UnsubAck.new([MQTT::Protocol::UnsubAck::ReasonCode::Success], 65534u16)
           unsuback.to_io(io)
 
           mio.rewind

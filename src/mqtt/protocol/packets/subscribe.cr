@@ -3,17 +3,25 @@ module MQTT
     struct Subscribe < Packet
       TYPE = 8u8
 
+      # Whether the server sends retained messages when the subscription is
+      # made (3.8.3.1). v3 always sends them, which is `SendOnSubscribe`.
+      enum RetainHandling : UInt8
+        SendOnSubscribe       = 0
+        SendOnNewSubscription = 1
+        DoNotSend             = 2
+      end
+
       record TopicFilter,
         topic : String,
         qos : UInt8,
         no_local : Bool = false,
         retain_as_published : Bool = false,
-        retain_handling : UInt8 = 0u8 do
+        retain_handling : RetainHandling = RetainHandling::SendOnSubscribe do
         def initialize(@topic : String, @qos : UInt8, @no_local : Bool = false,
-                       @retain_as_published : Bool = false, @retain_handling : UInt8 = 0u8)
+                       @retain_as_published : Bool = false,
+                       @retain_handling : RetainHandling = RetainHandling::SendOnSubscribe)
           raise ArgumentError.new("Topic must be at least 1 char long") if @topic.size < 1
           raise ArgumentError.new("Topic cannot be larger than 65535 bytes") if @topic.bytesize > 65535
-          raise ArgumentError.new("Invalid Retain Handling: #{@retain_handling}") if @retain_handling > 2
           if @topic.count("#") > 1
             raise ArgumentError.new("There can only be one multi-level wildcard in a TopicFilter")
           end
@@ -75,7 +83,9 @@ module MQTT
           io.validate_subscription_options(options)
           no_local = options.bit(2) == 1
           retain_as_published = options.bit(3) == 1
-          retain_handling = (options & 0b0011_0000u8) >> 4
+          # 3.8.3.1: a Retain Handling of 3 is a Protocol Error.
+          retain_handling = RetainHandling.from_value?((options & 0b0011_0000u8) >> 4) ||
+                            raise Error::ProtocolError.new(0x82u8, "invalid retain handling 3")
           topic_filters << TopicFilter.new(topic, qos, no_local, retain_as_published, retain_handling)
         end
         # The payload MUST contain at least one Topic Filter / Options pair
@@ -106,7 +116,7 @@ module MQTT
           options = topic_filter.qos
           options |= 0b0000_0100u8 if topic_filter.no_local?
           options |= 0b0000_1000u8 if topic_filter.retain_as_published?
-          options |= (topic_filter.retain_handling << 4)
+          options |= (topic_filter.retain_handling.value << 4)
           io.write_byte(options)
         end
       end

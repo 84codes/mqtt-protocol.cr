@@ -60,10 +60,10 @@ describe "PUBLISH topic validation" do
 
   it "rejects NUL and ill-formed UTF-8 at construction too" do
     expect_raises(ArgumentError) do
-      MQTT::Protocol::Publish.new("a\u0000b", "x".to_slice, nil, false, 0u8, false)
+      MQTT::Protocol::Publish.new("a\u0000b", "x".to_slice)
     end
     expect_raises(ArgumentError) do
-      MQTT::Protocol::Publish.new(Bytes[0xFF], "x".to_slice, nil, false, 0u8, false)
+      MQTT::Protocol::Publish.new(Bytes[0xFF], "x".to_slice)
     end
   end
 end

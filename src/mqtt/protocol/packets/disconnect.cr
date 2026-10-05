@@ -29,7 +29,7 @@ module MQTT
         AdministrativeAction                = 0x98
         PayloadFormatInvalid                = 0x99
         RetainNotSupported                  = 0x9A
-        QoSNotSupported                     = 0x9B
+        QosNotSupported                     = 0x9B
         UseAnotherServer                    = 0x9C
         ServerMoved                         = 0x9D
         SharedSubscriptionsNotSupported     = 0x9E

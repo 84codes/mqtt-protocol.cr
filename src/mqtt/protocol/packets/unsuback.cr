@@ -30,9 +30,20 @@ module MQTT
         @reason_codes
       end
 
-      def initialize(@packet_id : UInt16, reason_codes : Array(ReasonCode)? = nil,
+      # One reason code per topic filter of the UNSUBSCRIBE, in order
+      # [MQTT-3.11.3-1]. A v3 IO writes none, since v3 UNSUBACK has no payload.
+      def initialize(reason_codes : Array(ReasonCode), @packet_id : UInt16,
                      @properties : UnsubAckProperties = UnsubAckProperties.new)
-        @reason_codes = reason_codes.try { |codes| codes.empty? ? nil : codes }
+        @reason_codes = reason_codes.empty? ? nil : reason_codes
+      end
+
+      @[Deprecated("Use `UnsubAck.new(reason_codes, packet_id)` with one reason code per topic filter")]
+      def self.new(packet_id : UInt16)
+        new(packet_id, UnsubAckProperties.new)
+      end
+
+      # A v3 UNSUBACK carries no reason codes; decoding one allocates no array.
+      private def initialize(@packet_id : UInt16, @properties : UnsubAckProperties)
       end
 
       def remaining_length(version : MQTT::Protocol::Version) : UInt32
@@ -47,7 +58,7 @@ module MQTT
         packet_id = io.read_packet_id
         # v3 UNSUBACK is a bare packet id with no payload at all; any v3
         # payload bytes are rejected by the byte budget + finish_packet.
-        return new(packet_id) unless io.unsuback_payload?
+        return new(packet_id, UnsubAckProperties.new) unless io.unsuback_payload?
         properties = io.read_properties(UnsubAckProperties)
         reason_codes = Array(ReasonCode).new
         while io.remaining_in_packet > 0
@@ -55,11 +66,16 @@ module MQTT
           reason_codes << (ReasonCode.from_value?(byte) ||
                            raise Error::ProtocolError.new(0x81u8, "invalid unsuback reason code #{byte}"))
         end
-        new(packet_id, reason_codes, properties)
+        new(reason_codes, packet_id, properties)
       end
 
       def to_io(io)
         io.validate_outbound_packet_type(TYPE)
+        # Checked before the header goes out, so the packet is never half
+        # written. Every UNSUBSCRIBE has a topic filter, so v5 needs a code.
+        if io.unsuback_payload? && @reason_codes.nil?
+          raise MQTT::Protocol::Error::PacketEncode.new("v5 UnsubAck needs a reason code per topic filter")
+        end
         io.write_byte(TYPE << 4)
         io.write_remaining_length remaining_length(io.version)
         io.write_int(packet_id)

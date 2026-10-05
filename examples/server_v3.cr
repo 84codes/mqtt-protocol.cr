@@ -27,8 +27,7 @@ def read_connect(io : MQTT::Protocol::IO) : MQTT::Protocol::Connect?
   io.read_connect
 rescue ex : MQTT::Protocol::Error::Connect
   # Bad protocol name or level, rejected client id, ...: v3 has a return code.
-  reject(io, MQTT::Protocol::Connack::ReasonCode.from_v3_return_code(
-    MQTT::Protocol::Connack::ReturnCode.new(ex.return_code)))
+  reject(io, ex.reason_code)
 rescue MQTT::Protocol::Error::PacketDecode
   # Malformed, or a CONNECT for another version (a ProtocolError on a pinned
   # IO). v3 has no CONNACK code for either, so just close.
@@ -54,7 +53,7 @@ def serve(io : MQTT::Protocol::IO) : Nil
       codes = packet.topic_filters.map { |filter| suback_reason(filter) }
       io.write_packet MQTT::Protocol::SubAck.new(codes, packet.packet_id)
     when MQTT::Protocol::Unsubscribe
-      io.write_packet MQTT::Protocol::UnsubAck.new(packet.packet_id)
+      io.write_packet MQTT::Protocol::UnsubAck.new([] of MQTT::Protocol::UnsubAck::ReasonCode, packet.packet_id)
     when MQTT::Protocol::PingReq
       io.write_packet MQTT::Protocol::PingResp.new
     when MQTT::Protocol::Disconnect
@@ -69,7 +68,7 @@ rescue MQTT::Protocol::Error::PacketDecode | IO::Error
 end
 
 def suback_reason(filter : MQTT::Protocol::Subscribe::TopicFilter) : MQTT::Protocol::SubAck::ReasonCode
-  filter.qos.zero? ? MQTT::Protocol::SubAck::ReasonCode::GrantedQoS0 : MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1
+  filter.qos.zero? ? MQTT::Protocol::SubAck::ReasonCode::GrantedQos0 : MQTT::Protocol::SubAck::ReasonCode::GrantedQos1
 end
 
 server = TCPServer.new("127.0.0.1", 1883)

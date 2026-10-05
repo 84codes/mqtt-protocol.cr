@@ -26,7 +26,7 @@ describe "direct codec from_io calls" do
     # Body: packet id (00 01) + return code 0x01.
     io = direct_io(Bytes[0x00, 0x01, 0x01], MQTT::Protocol::Version::V3_1_1)
     suback = MQTT::Protocol::SubAck.from_io(io, 0u8, 3u32)
-    suback.reason_codes.should eq [MQTT::Protocol::SubAck::ReasonCode::GrantedQoS1]
+    suback.reason_codes.should eq [MQTT::Protocol::SubAck::ReasonCode::GrantedQos1]
   end
 
   it "decodes a valid directly-decoded v5 SUBSCRIBE instead of raising empty-payload" do

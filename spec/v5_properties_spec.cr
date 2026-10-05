@@ -290,8 +290,8 @@ describe "repeatable property value semantics" do
   end
 
   it "reading UnsubAck#reason_codes does not affect equality" do
-    a = MQTT::Protocol::UnsubAck.new(1u16)
-    b = MQTT::Protocol::UnsubAck.new(1u16)
+    a = MQTT::Protocol::UnsubAck.new([] of MQTT::Protocol::UnsubAck::ReasonCode, 1u16)
+    b = MQTT::Protocol::UnsubAck.new([] of MQTT::Protocol::UnsubAck::ReasonCode, 1u16)
     a.reason_codes.should be_empty
     a.reason_codes?.should be_nil
     a.should eq b

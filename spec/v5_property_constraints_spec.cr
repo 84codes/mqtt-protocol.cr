@@ -88,20 +88,20 @@ describe "v5 PUBLISH empty topic" do
   end
 
   it "refuses to encode an empty topic on a v3 connection" do
-    packet = MQTT::Protocol::Publish.new("", "x".to_slice, nil, false, 0u8, false)
+    packet = MQTT::Protocol::Publish.new("", "x".to_slice)
     io = MQTT::Protocol::IO.v3(IO::Memory.new)
     expect_raises(MQTT::Protocol::Error::PacketEncode) { io.write_packet(packet) }
   end
 
   it "refuses to encode an empty topic on v5 without a Topic Alias" do
-    packet = MQTT::Protocol::Publish.new("", "x".to_slice, nil, false, 0u8, false)
+    packet = MQTT::Protocol::Publish.new("", "x".to_slice)
     io = MQTT::Protocol::IO.v5(IO::Memory.new)
     expect_raises(MQTT::Protocol::Error::PacketEncode) { io.write_packet(packet) }
   end
 
   it "encodes an empty topic on v5 with a Topic Alias" do
     props = MQTT::Protocol::PublishProperties.new(topic_alias: 5u16)
-    packet = MQTT::Protocol::Publish.new("", "x".to_slice, nil, false, 0u8, false, props)
+    packet = MQTT::Protocol::Publish.new("", "x".to_slice, properties: props)
     mio = IO::Memory.new
     MQTT::Protocol::IO.v5(mio).write_packet(packet)
     mio.rewind
@@ -167,7 +167,7 @@ describe "property value constraints on construction" do
     props = MQTT::Protocol::ConnackProperties.new(maximum_qos: 1u8, receive_maximum: 1u16)
     props.maximum_qos.should eq 1u8
     props.maximum_qos = nil
-    props.maximum_qos.should be_nil
+    props.maximum_qos?.should be_nil
     MQTT::Protocol::PublishProperties.new(topic_alias: 65535u16).topic_alias.should eq 65535u16
   end
 end

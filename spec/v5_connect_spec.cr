@@ -147,7 +147,7 @@ describe MQTT::Protocol::Connect do
   end
 
   it "copy_with can change other fields (e.g. version) and carries the rest over" do
-    props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 30u32)
+    props = MQTT::Protocol::ConnectProperties.new(receive_maximum: 30u16)
     original = MQTT::Protocol::Connect.new(
       client_id: "cid",
       clean_start: true,

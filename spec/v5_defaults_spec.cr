@@ -96,9 +96,30 @@ describe "a v3 CONNECT in v5 terms" do
     encode(v3_connect(clean_start: false), MQTT::Protocol::Version::V3_1_1).should eq bytes
   end
 
-  it "keeps a session expiry that was set explicitly" do
-    props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 30u32)
-    v3_connect(false, props).properties.session_expiry_interval.should eq 30u32
+  it "rejects a session expiry Clean Session cannot express" do
+    {true => 30u32, false => 0u32}.each do |clean_start, expiry|
+      props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: expiry)
+      expect_raises(ArgumentError, /session expiry/) { v3_connect(clean_start, props) }
+    end
+  end
+
+  it "accepts the session expiry Clean Session means" do
+    {true => 0u32, false => UInt32::MAX}.each do |clean_start, expiry|
+      props = MQTT::Protocol::ConnectProperties.new(session_expiry_interval: expiry)
+      v3_connect(clean_start, props).properties.session_expiry_interval.should eq expiry
+    end
+  end
+
+  it "reads the expiry from the new flag when a copy changes Clean Session" do
+    persistent = decode(v3_connect_bytes(0x00), MQTT::Protocol::Version::V3_1_1).as(MQTT::Protocol::Connect)
+    persistent.copy_with(clean_start: true).properties.session_expiry_interval.should eq 0u32
+    clean = decode(v3_connect_bytes(0x02), MQTT::Protocol::Version::V3_1_1).as(MQTT::Protocol::Connect)
+    clean.copy_with(clean_start: false).properties.session_expiry_interval.should eq UInt32::MAX
+  end
+
+  it "keeps the never-expiring session when a copy moves to v5" do
+    connect = decode(v3_connect_bytes(0x00), MQTT::Protocol::Version::V3_1_1).as(MQTT::Protocol::Connect)
+    connect.copy_with(version: MQTT::Protocol::Version::V5).properties.session_expiry_interval.should eq UInt32::MAX
   end
 
   it "leaves a v5 CONNECT's session expiry to the wire" do

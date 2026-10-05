@@ -36,17 +36,22 @@ module MQTT
                      @version : Version = Version::V5, @properties : ConnectProperties = ConnectProperties.new)
         # Unknown is an IO state; a CONNECT on the wire always names a real level.
         raise ArgumentError.new("CONNECT needs a known protocol version") if @version.unknown?
-        # v5 allows a Password without a User Name (3.1.2.9); v3.1.1 forbids
-        # it ([MQTT-3.1.2-22 v3.1.1]), and there is no flag encoding for it in v3.
-        if @password && @username.nil? && !@version.v5?
-          raise ArgumentError.new("password without username requires MQTT 5.0")
-        end
-        # A v3 session without Clean Session lasts until a clean connect, which
-        # v5 spells as an expiry that never runs out (3.1.2.11.2). Only filled
-        # in when absent: v3 cannot carry the property, so this is the v5 view
-        # of the flag, not something that goes on the wire.
-        if !@version.v5? && !@clean_start && @properties.session_expiry_interval?.nil?
-          @properties.session_expiry_interval = UInt32::MAX
+        unless @version.v5?
+          # v5 allows a Password without a User Name (3.1.2.9); v3.1.1 forbids
+          # it ([MQTT-3.1.2-22 v3.1.1]), and there is no flag encoding for it in v3.
+          if @password && @username.nil?
+            raise ArgumentError.new("password without username requires MQTT 5.0")
+          end
+          # v3 has only Clean Session for the session lifetime: it ends at
+          # disconnect (expiry 0) or lasts until a clean connect, which v5 spells
+          # as an expiry that never runs out (3.1.2.11.2). Any other expiry would
+          # read differently from what goes on the wire.
+          v3_expiry = @clean_start ? 0u32 : UInt32::MAX
+          if (expiry = @properties.session_expiry_interval?) && expiry != v3_expiry
+            raise ArgumentError.new("session expiry #{expiry} with clean_start: #{@clean_start} requires MQTT 5.0")
+          end
+          # The v5 view of the flag, not something that goes on the wire.
+          @properties.session_expiry_interval = UInt32::MAX unless @clean_start
         end
       end
 
@@ -64,9 +69,17 @@ module MQTT
       # `copy_with`, hand-written because Connect is a plain `struct < Packet`.
       def copy_with(client_id = @client_id, clean_start = @clean_start,
                     keep_alive = @keep_alive, username = @username, password = @password,
-                    will = @will, version = @version, properties = @properties)
+                    will = @will, version = @version, properties = carried_properties(version))
         Connect.new(client_id, clean_start: clean_start, keep_alive: keep_alive, username: username,
           password: password, will: will, version: version, properties: properties)
+      end
+
+      # A v3 CONNECT's expiry is only its reading of Clean Session, so a v3 copy
+      # drops it and reads its own flag; carrying it would contradict a changed one.
+      private def carried_properties(version : Version) : ConnectProperties
+        properties = @properties
+        properties.session_expiry_interval = nil unless @version.v5? || version.v5?
+        properties
       end
 
       # CONNECT carries its own protocol version, so its framing follows

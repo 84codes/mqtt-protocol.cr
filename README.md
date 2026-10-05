@@ -69,7 +69,7 @@ connect = MQTT::Protocol::Connect.new("sensor-1", clean_start: false, version: M
 connect.properties.session_expiry_interval # => 4294967295
 ```
 
-Only the flag goes on the wire for v3. An expiry set explicitly on a v3 CONNECT is kept on the struct but never sent.
+Only the flag goes on the wire for v3, so a v3 CONNECT raises `ArgumentError` for any other expiry than the one its flag means.
 
 ### Properties read as their defaults
 

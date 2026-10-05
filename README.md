@@ -1,6 +1,153 @@
 # mqtt-protocol.cr
 
-mqtt-protocol.cr is a MQTT 3.1.1 serialization library for Crystal
+mqtt-protocol.cr is a MQTT 3.1, 3.1.1 and 5.0 serialization library for Crystal
+
+## Think MQTT 5 all the way
+
+Build and read every packet as MQTT 5.0, whatever version the peer speaks. The `IO` knows the negotiated version and does the framing. On a 3.1/3.1.1 connection it drops what v3 can't carry when writing (properties, most reason codes), and when reading it gives you the v5 packet that means the same as the v3 bytes. Application code shouldn't have to branch on the version.
+
+### One IO per connection
+
+A server doesn't need to know the version up front. The CONNECT tells the IO:
+
+```crystal
+io = MQTT::Protocol::IO.new(socket)
+io.version # => Unknown, only a CONNECT can be read
+connect = io.read_connect
+io.version # => V3_1, V3_1_1 or V5, and every later packet is framed for it
+```
+
+A client knows what it speaks, so it pins the IO with `MQTT::Protocol::IO.v5(socket)` or `MQTT::Protocol::IO.v3(socket)`.
+
+### Clean Session, Clean Start and Session Expiry Interval
+
+MQTT 3.1.1 uses one flag, Clean Session, for two things: whether to discard the existing session on connect, and whether to keep the session after disconnect. MQTT 5.0 splits it into the Clean Start flag (the same bit) and the Session Expiry Interval property. A v3 CONNECT reads as the v5 CONNECT that means the same:
+
+| v3 Clean Session | `clean_start?` | `properties.session_expiry_interval` | Session |
+|---|---|---|---|
+| 1 | `true` | `0` | new, ends at disconnect |
+| 0 | `false` | `UInt32::MAX` | resumed, never expires |
+
+v5 also allows the two other combinations: Clean Start 1 with an expiry (a new session that outlives the connection), and Clean Start 0 with expiry 0 (resume the session, then end it at disconnect).
+
+A server can then handle every version with v5 logic:
+
+```crystal
+connect = io.read_connect
+sessions.delete(connect.client_id) if connect.clean_start?
+session_present = sessions.has_key?(connect.client_id)
+expiry = connect.properties.session_expiry_interval # seconds, 0 when absent
+io.write_packet MQTT::Protocol::Connack.new(session_present, MQTT::Protocol::Connack::ReasonCode::Success)
+```
+
+A v5 DISCONNECT may change the expiry. A v3 DISCONNECT has no properties, so it reads as one that doesn't:
+
+```crystal
+when MQTT::Protocol::Disconnect
+  expiry = packet.properties.session_expiry_interval || expiry
+```
+
+Once the connection is closed, with or without a DISCONNECT:
+
+```crystal
+case expiry
+when 0           then sessions.delete(connect.client_id)
+when UInt32::MAX then # keep it until a Clean Start
+else                  expire_later(connect.client_id, expiry.seconds)
+end
+```
+
+Building a CONNECT works the same way. The default version is 5.0:
+
+```crystal
+# A new session that survives an hour offline
+MQTT::Protocol::Connect.new("sensor-1", clean_start: true,
+  properties: MQTT::Protocol::ConnectProperties.new(session_expiry_interval: 3600u32))
+
+# v3.1.1 with Clean Session 0 reads like any v5 CONNECT
+connect = MQTT::Protocol::Connect.new("sensor-1", clean_start: false, version: MQTT::Protocol::Version::V3_1_1)
+connect.properties.session_expiry_interval # => 4294967295
+```
+
+Only the flag goes on the wire for v3. An expiry set explicitly on a v3 CONNECT is kept on the struct but never sent.
+
+### Properties read as their defaults
+
+An absent property reads as its MQTT 5.0 default, so you don't need to know the defaults or check whether the peer sent the property. Integer properties also have a `?` reader that returns `nil` when the property is absent:
+
+```crystal
+props = MQTT::Protocol::ConnackProperties.new
+props.receive_maximum   # => 65535
+props.receive_maximum?  # => nil
+props.maximum_qos       # => 2
+props.retain_available? # => true
+```
+
+When absence means "no limit" or "the value from another packet" (`maximum_packet_size`, `server_keep_alive`, `message_expiry_interval`, ...), there is no default and the property reads as `nil`. Defaults are never written: only what you set goes on the wire.
+
+A v3 packet has no properties, so they read as what v3 means in v5 terms. v3 has no subscription identifiers or shared subscriptions, so a v3 CONNACK reads as a server that doesn't offer them:
+
+```crystal
+connack = io.read_packet.as(MQTT::Protocol::Connack) # on a v3 IO
+connack.properties.subscription_identifier_available? # => false
+connack.properties.shared_subscription_available?     # => false
+connack.properties.maximum_qos                        # => 2
+```
+
+### Reason codes
+
+Use v5 reason codes for every packet. A v3 IO writes what v3 can carry:
+
+| Packet | Written on v3 as |
+|---|---|
+| CONNACK | the matching return code, see below |
+| SUBACK | granted QoS as is, every failure as `0x80` |
+| UNSUBACK, PUBACK, PUBREC, PUBREL, PUBCOMP | the packet id only |
+| DISCONNECT | an empty packet |
+
+Reading goes the other way: a v3 return code reads as its reason code (`IdentifierRejected` as `ClientIdentifierNotValid`), a SUBACK `0x80` as `UnspecifiedError`, and an ack as `Success`.
+
+Some CONNACK reasons, such as `Banned`, have no v3 return code. Writing one on a v3 IO raises `Error::PacketEncode` before any byte goes out, and the server closes the connection instead. `ReasonCode#to_v3_return_code` returns `nil` for these. Every reason the decoder raises has a v3 code, so a rejected CONNECT can always be answered:
+
+```crystal
+begin
+  connect = io.read_connect
+rescue ex : MQTT::Protocol::Error::Connect
+  io.write_packet MQTT::Protocol::Connack.new(false, ex.reason_code)
+end
+```
+
+`Error::PacketDecode#reason_code` is the v5 reason code to send in a CONNACK or DISCONNECT.
+
+### Where the version still matters
+
+Some of v5 has no v3 counterpart, so check `io.version.v5?` before using it:
+
+- Only a v5 server may send DISCONNECT. A v3 server closes the connection.
+- A malformed CONNECT gets a CONNACK on v5 only. On v3 the server closes the connection.
+- AUTH doesn't exist in v3, and writing it raises `Error::PacketEncode`.
+- An empty PUBLISH topic with a Topic Alias is v5 only.
+
+[`examples/server_auto_version.cr`](examples/server_auto_version.cr) is a server that serves all versions this way. [`server_v3.cr`](examples/server_v3.cr) and [`server_v5.cr`](examples/server_v5.cr) pin the IO to one version.
+
+### Coming from 0.3
+
+Most of the v3 API is deprecated and will be removed:
+
+| Deprecated | Use |
+|---|---|
+| `Connect#clean_session?` | `#clean_start?` and `properties.session_expiry_interval` |
+| `Connect#keepalive` | `#keep_alive` |
+| `Connect.new(client_id, clean_session, keepalive, ...)` | `Connect.new(client_id, clean_start:, keep_alive:, ...)`, which defaults to 5.0. Pass `version:` to keep 3.1.1 |
+| `Connack.new(session_present, ReturnCode)` | `Connack.new(session_present, ReasonCode)` |
+| `Connack#return_code`, `Error::Connect#return_code` | `#reason_code` |
+| `SubAck.new(Array(ReturnCode), packet_id)`, `SubAck#return_codes` | `SubAck.new(Array(ReasonCode), packet_id)`, `#reason_codes` |
+| `UnsubAck.new(packet_id)` | `UnsubAck.new(reason_codes, packet_id)` |
+| `Unsubscribe#topics` | `#topic_filters` |
+
+`Publish.new` and `Will.new` no longer take positional arguments after the topic and payload. Pass them by name.
+
+## Specification coverage
 
 Code comments and specs cite MQTT 5.0 statement ids, e.g. `[MQTT-3.8.3-5]`. A rule that only exists in 3.1.1 is tagged `[MQTT-3.8.3-4 v3.1.1]`, and a rule without a statement id is cited by section, e.g. `(§1.5.5)`. The checklist below uses 3.1.1 ids.
 

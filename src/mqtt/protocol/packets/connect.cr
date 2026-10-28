@@ -106,6 +106,17 @@ module MQTT
         len.to_u32
       end
 
+      # Read a whole CONNECT. Any other packet type is rejected at its first
+      # byte, before its body is read ([MQTT-3.1.0-1]).
+      def self.from_io(io : MQTT::Protocol::IO) : Connect
+        first_byte = read_first_byte(io)
+        type = first_byte >> 4
+        decode_assert type == TYPE, "first packet must be CONNECT, got type #{type}"
+        read_body(io, first_byte) do |flags, remaining_length|
+          from_io(io, flags, remaining_length)
+        end
+      end
+
       # ameba:disable Metrics/CyclomaticComplexity
       def self.from_io(io : MQTT::Protocol::IO, flags : Flags, remaining_length)
         decode_assert flags.zero?, MQTT::Protocol::Error::InvalidFlags, flags
@@ -233,17 +244,23 @@ module MQTT
 
       def initialize(@topic : String, @payload : Bytes, *, @qos : UInt8 = 0u8, @retain : Bool = false,
                      @properties : WillProperties = WillProperties.new)
-        raise ArgumentError.new("Topic cannot contain wildcard") if @topic.matches?(/[#+]/)
+        Will.validate_topic(@topic)
       end
 
       def self.from_io(io : MQTT::Protocol::IO, qos : UInt8, retain : Bool) : Will
         # In v5 the Will Properties precede the Will Topic on the wire.
         properties = io.read_properties(WillProperties)
         topic = io.read_string
+        # Before the payload, so a bad topic fails without reading it.
+        validate_topic(topic)
         payload = io.read_bytes
         new(topic, payload, qos: qos, retain: retain, properties: properties)
       rescue ex : ArgumentError
         raise MQTT::Protocol::Error::PacketDecode.new(ex.message)
+      end
+
+      protected def self.validate_topic(topic : String) : Nil
+        raise ArgumentError.new("Topic cannot contain wildcard") if topic.matches?(/[#+]/)
       end
 
       def to_io(io)

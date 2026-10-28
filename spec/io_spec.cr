@@ -399,6 +399,22 @@ describe "IO version modeling" do
     io.version.should eq MQTT::Protocol::Version::V3_1
     io.negotiated?.should be_true
   end
+
+  it "read_connect refuses a non-CONNECT before reading its body on a pinned IO" do
+    mio = IO::Memory.new
+    MQTT::Protocol::IO.v5(mio).write_packet MQTT::Protocol::Publish.new("a/b", "hi".to_slice)
+    mio.rewind
+
+    io = MQTT::Protocol::IO.v5(mio)
+    expect_raises(MQTT::Protocol::Error::PacketDecode, /first packet must be CONNECT/) do
+      io.read_connect
+    end
+    mio.pos.should eq 1
+  end
+
+  it "read_connect raises EOFError on a closed connection" do
+    expect_raises(IO::EOFError) { MQTT::Protocol::IO.new(IO::Memory.new).read_connect }
+  end
 end
 
 # The bootstrap state exists to close a misparse hole: until CONNECT names the

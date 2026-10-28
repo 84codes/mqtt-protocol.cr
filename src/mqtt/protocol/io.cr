@@ -160,8 +160,8 @@ module MQTT
       end
 
       # Read the opening CONNECT and leave this IO framing for its version.
-      # [MQTT-3.1.0-1]: the first packet MUST be a CONNECT - a bootstrap IO
-      # rejects every other type before reading its body.
+      # [MQTT-3.1.0-1]: the first packet MUST be a CONNECT - any other type is
+      # rejected at its first byte, before its body is read.
       #
       # The IO keeps its identity, so a server that rejects the CONNECT answers
       # on the same object, with the framing the CONNECT got as far as revealing:
@@ -171,8 +171,7 @@ module MQTT
       #     # rescue Error::Connect -> io still usable, and a CONNACK is framed
       #     # for whatever version the CONNECT announced before it failed
       def read_connect : Connect
-        read_packet.as?(Connect) ||
-          raise Error::PacketDecode.new("first packet must be CONNECT")
+        Connect.from_io(self)
       end
 
       # Deliberately NO forward_missing_to: an unwrapped ::IO read (read_fully,

@@ -242,6 +242,31 @@ describe MQTT::Protocol::Packet do
           end
         end
       end
+
+      describe "#from_io" do
+        it "rejects a wildcard topic before reading the payload" do
+          mio = IO::Memory.new
+          w = MQTT::Protocol::IO.v3(mio)
+          w.write_byte 0b00010000u8 # CONNECT
+          # MQTT(2+4) + level(1) + flags(1) + keepalive(2) + client id(2+1)
+          # + will topic(2+3) + will payload(2+3) = 23
+          w.write_remaining_length 23
+          w.write_string "MQTT"
+          w.write_byte 0x04u8
+          w.write_byte 0b00000110u8 # will, clean session
+          w.write_int 30u16
+          w.write_string "c"
+          w.write_string "a/#"
+          w.write_string "bye"
+          mio.rewind
+
+          expect_raises(MQTT::Protocol::Error::PacketDecode, /wildcard/) do
+            MQTT::Protocol::IO.new(mio).read_connect
+          end
+          # Fixed header (2) + body up to the end of the will topic (18).
+          mio.pos.should eq 20
+        end
+      end
     end
 
     describe "Connack" do

@@ -80,44 +80,52 @@ module MQTT
         rl + MQTT::Protocol::IO.variable_byte_int_size(rl) + 1
       end
 
+      # ameba:disable Metrics/CyclomaticComplexity
       def self.from_io(io : MQTT::Protocol::IO) : Packet
-        # A clean end-of-stream before any byte is a closed connection, not a
-        # malformed packet, so it propagates as EOFError. Once we are committed
-        # to a packet (below), a short read is a decode error, not an EOF.
-        first_byte = io.read_byte? || raise(::IO::EOFError.new)
-        read_body(io, first_byte)
+        first_byte = read_first_byte(io)
+        type = first_byte >> 4
+        io.validate_packet_type(type)
+        read_body(io, first_byte) do |flags, remaining_length|
+          case type
+          when Connect::TYPE     then Connect.from_io(io, flags, remaining_length)
+          when Connack::TYPE     then Connack.from_io(io, flags, remaining_length)
+          when Publish::TYPE     then Publish.from_io(io, flags, remaining_length)
+          when PubAck::TYPE      then PubAck.from_io(io, flags, remaining_length)
+          when PubRec::TYPE      then PubRec.from_io(io, flags, remaining_length)
+          when PubRel::TYPE      then PubRel.from_io(io, flags, remaining_length)
+          when PubComp::TYPE     then PubComp.from_io(io, flags, remaining_length)
+          when Subscribe::TYPE   then Subscribe.from_io(io, flags, remaining_length)
+          when SubAck::TYPE      then SubAck.from_io(io, flags, remaining_length)
+          when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
+          when UnsubAck::TYPE    then UnsubAck.from_io(io, flags, remaining_length)
+          when PingReq::TYPE     then PingReq.from_io(io, flags, remaining_length)
+          when PingResp::TYPE    then PingResp.from_io(io, flags, remaining_length)
+          when Disconnect::TYPE  then Disconnect.from_io(io, flags, remaining_length)
+          when Auth::TYPE        then Auth.from_io(io, flags, remaining_length)
+          else
+            raise Error::PacketDecode.new "invalid packet type #{type.to_u8}"
+          end
+        end
       end
 
-      # ameba:disable Metrics/CyclomaticComplexity
-      protected def self.read_body(io : MQTT::Protocol::IO, first_byte : UInt8) : Packet
-        type = first_byte >> 4
+      # A clean end-of-stream before any byte is a closed connection, not a
+      # malformed packet, so it propagates as EOFError. Once we are committed
+      # to a packet (read_body), a short read is a decode error, not an EOF.
+      protected def self.read_first_byte(io : MQTT::Protocol::IO) : UInt8
+        io.read_byte? || raise(::IO::EOFError.new)
+      end
+
+      # Read the rest of the fixed header and yield its flags and remaining
+      # length to a codec, which parses the body within the packet byte budget.
+      protected def self.read_body(io : MQTT::Protocol::IO, first_byte : UInt8, &)
         flags = first_byte & 0b00001111
-        io.validate_packet_type(type)
         remaining_length = io.read_remaining_length
         # Every read primitive charges against this budget, so no codec can
         # read past the packet boundary; finish_packet then rejects a codec
         # that consumed too little. Together they enforce section 2.1.4 framing
         # integrity centrally instead of per packet type.
         io.start_packet(remaining_length)
-        packet = case type
-                 when Connect::TYPE     then Connect.from_io(io, flags, remaining_length)
-                 when Connack::TYPE     then Connack.from_io(io, flags, remaining_length)
-                 when Publish::TYPE     then Publish.from_io(io, flags, remaining_length)
-                 when PubAck::TYPE      then PubAck.from_io(io, flags, remaining_length)
-                 when PubRec::TYPE      then PubRec.from_io(io, flags, remaining_length)
-                 when PubRel::TYPE      then PubRel.from_io(io, flags, remaining_length)
-                 when PubComp::TYPE     then PubComp.from_io(io, flags, remaining_length)
-                 when Subscribe::TYPE   then Subscribe.from_io(io, flags, remaining_length)
-                 when SubAck::TYPE      then SubAck.from_io(io, flags, remaining_length)
-                 when Unsubscribe::TYPE then Unsubscribe.from_io(io, flags, remaining_length)
-                 when UnsubAck::TYPE    then UnsubAck.from_io(io, flags, remaining_length)
-                 when PingReq::TYPE     then PingReq.from_io(io, flags, remaining_length)
-                 when PingResp::TYPE    then PingResp.from_io(io, flags, remaining_length)
-                 when Disconnect::TYPE  then Disconnect.from_io(io, flags, remaining_length)
-                 when Auth::TYPE        then Auth.from_io(io, flags, remaining_length)
-                 else
-                   raise Error::PacketDecode.new "invalid packet type #{type.to_u8}"
-                 end
+        packet = yield flags, remaining_length
         io.finish_packet
         packet
       rescue ::IO::EOFError

@@ -1,5 +1,13 @@
 require "./spec_helper"
 
+# The `: T` restriction checks that `T.from_io` returns a `T`, not a `Packet`.
+private def write_and_read(packet : T) : T forall T
+  mio = IO::Memory.new
+  packet.to_io(MQTT::Protocol::IO.new(mio))
+  mio.rewind
+  T.from_io(mio).tap { mio.pos.should eq mio.size }
+end
+
 describe MQTT::Protocol::Packet do
   describe "#from_io" do
     it "should raise error on invalid type" do
@@ -12,6 +20,104 @@ describe MQTT::Protocol::Packet do
 
       expect_raises(MQTT::Protocol::Error::PacketDecode, /invalid packet type/) do
         MQTT::Protocol::Packet.from_io(io)
+      end
+    end
+
+    describe "on a packet type" do
+      it "reads a Connect" do
+        will = MQTT::Protocol::Will.new("will", "bye".to_slice, 1u8, false)
+        packet = MQTT::Protocol::Connect.new("client", true, 60u16, "user", "pass".to_slice, will)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a Connack" do
+        packet = MQTT::Protocol::Connack.new(true, MQTT::Protocol::Connack::ReturnCode::Accepted)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a Publish" do
+        packet = MQTT::Protocol::Publish.new("a/b", "hello".to_slice, 1u16, false, 1u8, true)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a PubAck" do
+        packet = MQTT::Protocol::PubAck.new(1u16)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a PubRec" do
+        packet = MQTT::Protocol::PubRec.new(1u16)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a PubRel" do
+        packet = MQTT::Protocol::PubRel.new(1u16)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a PubComp" do
+        packet = MQTT::Protocol::PubComp.new(1u16)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a Subscribe" do
+        topic_filter = MQTT::Protocol::Subscribe::TopicFilter.new("a/+", 1u8)
+        packet = MQTT::Protocol::Subscribe.new([topic_filter], 1u16)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a SubAck" do
+        packet = MQTT::Protocol::SubAck.new([MQTT::Protocol::SubAck::ReturnCode::QoS1], 1u16)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads an Unsubscribe" do
+        packet = MQTT::Protocol::Unsubscribe.new(["a/+"], 1u16)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads an UnsubAck" do
+        packet = MQTT::Protocol::UnsubAck.new(1u16)
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a PingReq" do
+        packet = MQTT::Protocol::PingReq.new
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a PingResp" do
+        packet = MQTT::Protocol::PingResp.new
+        write_and_read(packet).should eq packet
+      end
+
+      it "reads a Disconnect" do
+        packet = MQTT::Protocol::Disconnect.new
+        write_and_read(packet).should eq packet
+      end
+
+      it "raises before reading remaining length if the type is wrong" do
+        mio = IO::Memory.new
+        MQTT::Protocol::PubAck.new(123u16).to_io(MQTT::Protocol::IO.new(mio))
+        mio.rewind
+
+        expect_raises(MQTT::Protocol::Error::PacketDecode, "invalid packet type 4, expected 5") do
+          MQTT::Protocol::PubRec.from_io(mio)
+        end
+        mio.pos.should eq 1
+      end
+
+      it "validates flags" do
+        mio = IO::Memory.new
+        io = MQTT::Protocol::IO.new(mio)
+        io.write_byte(6u8 << 4) # PubRel without its 0b0010 flags
+        io.write_remaining_length 2
+        io.write_int 123u16
+        mio.rewind
+
+        expect_raises(MQTT::Protocol::Error::InvalidFlags) do
+          MQTT::Protocol::PubRel.from_io(io)
+        end
       end
     end
 

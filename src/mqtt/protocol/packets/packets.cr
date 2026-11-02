@@ -39,6 +39,23 @@ module MQTT
         end
       end
 
+      # Per subclass, because `Packet.from_io(io)` reads any packet type.
+      # Absolute names, as this expands in the subclass's namespace.
+      macro inherited
+        {% unless @type.abstract? %}
+          # Reads a packet, fixed header included. Raises `Error::PacketDecode`
+          # if it is not a `{{ @type.name }}`.
+          def self.from_io(io : ::MQTT::Protocol::IO) : self
+            first_byte = io.read_byte
+            type = first_byte >> 4
+            unless type == TYPE
+              raise ::MQTT::Protocol::Error::PacketDecode.new("invalid packet type #{type}, expected #{TYPE}")
+            end
+            from_io(io, first_byte & 0b00001111, io.read_remaining_length)
+          end
+        {% end %}
+      end
+
       def self.from_io(io : ::IO) : Packet
         from_io MQTT::Protocol::IO.new(io)
       end
